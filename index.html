@@ -177,7 +177,7 @@ details[open]>summary .chev{transform:rotate(-135deg)}
       <button class="tab" role="tab" data-tab="watch" id="tab-watch"><span class="n">0</span><span class="t">候補</span></button>
       <button class="tab" role="tab" data-tab="out" id="tab-out"><span class="n">0</span><span class="t">被淘汰</span></button>
       <button class="tab" role="tab" data-tab="hold" id="tab-hold"><span class="n">0</span><span class="t">持股</span></button>
-      <button class="tab" role="tab" data-tab="bt" id="tab-bt"><span class="n">回測</span><span class="t">過去成績</span></button>
+      <button class="tab" role="tab" data-tab="bt" id="tab-bt"><span class="n">成績</span><span class="t">回測與記錄</span></button>
     </div>
   </div>
 
@@ -349,6 +349,49 @@ function buildDemo(){
 function fp(x,d){if(x===null||x===undefined||isNaN(x))return '—';return (x>0?'+':'')+x.toFixed(d===undefined?2:d)+'%'}
 function upDn(x){return x>0?'up':(x<0?'dn':'')}
 const BT_STATE={strong:'月線上、向上',weakening:'月線上、向下',pullback:'月線下、向上',bear:'月線下、向下'};
+function escH(s){return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+function fwHtml(f){
+  if(!f||!f.days||!f.days.length)return '<div class="empty">還沒有記錄。每次「每日更新股價資料」跑完，會自動記下當天排名前幾檔，之後自動算成績。</div>';
+  const S=f.summary||{};
+  const card=(h)=>{const x=S[h];
+    if(!x||!x.n)return `<div class="btcard"><div class="lab">滿 ${h} 個交易日</div><div class="sub">還沒有滿 ${h} 天的記錄。</div></div>`;
+    return `<div class="btcard"><div class="lab">滿 ${h} 個交易日的結果（已扣手續費和證交稅）</div>
+      <div class="big ${upDn(x.avg)}">${fp(x.avg)}</div>
+      <div class="sub">勝率 ${x.win}% ・ ${x.n} 筆（來自 ${x.days} 天的記錄）</div>
+      <div class="sub">對照組（同一天基本門檻合格的全部股票）平均 <span class="${upDn(x.base)}">${fp(x.base)}</span></div>
+      <div class="sub">排名前 ${f.topN} 檔比對照組<b class="${upDn(x.excess)}">${x.excess>=0?'多賺 ':'少賺 '}${Math.abs(x.excess).toFixed(2)}%</b></div></div>`};
+  const s20=S[20]||{n:0};
+  let warn='';
+  if(s20.days<30)warn=`<div class="notice">滿 20 天的記錄只有 ${s20.days||0} 天，樣本還太少，數字會跳很大，先別下結論。建議至少累積 30 個交易日以上。</div>`;
+  const stLbl={wait:'明天開盤買',unfilled:'沒買到（漲停或停牌）'};
+  const days=[...f.days].reverse().map((d,i)=>{
+    const rows=d.items.map(x=>{
+      const v=x.status==='done'?x.r20:x.sofar;
+      const cell=(x.status==='wait'||x.status==='unfilled')?`<td colspan="2" class="sub">${stLbl[x.status]}</td>`
+        :`<td>${x.entry.toFixed(2)}</td><td class="${upDn(v)}">${fp(v)}${x.status==='done'?'':'<small>（'+x.days+' 天）</small>'}</td>`;
+      return `<tr><td>${x.rank}</td><td>${escH(x.name)} <small>${escH(x.code)}</small></td>${cell}</tr>`}).join('');
+    const tag=d.avail>=20?'已滿 20 天':(d.avail>=1?'持有 '+d.avail+' 天':'今天剛記錄');
+    const avg=d.sofarAvg===null?'—':fp(d.sofarAvg);
+    const bs=d.base&&d.base.sofar!==null&&d.base.sofar!==undefined?'　對照 '+fp(d.base.sofar):'';
+    return `<details class="card"><summary><div class="r1"><div class="nm"><b>${d.date}</b><span class="cd">${tag}</span></div><div class="sc ${upDn(d.sofarAvg)}" style="font-size:18px">${avg}</div></div>
+      <div class="r4"><span>目前平均${bs}</span><span class="chev"></span></div></summary>
+      <div class="detail"><table style="width:100%"><thead><tr><th>名次</th><th>股票</th><th>買進價</th><th>${d.avail>=20?'20 天後':'目前'}</th></tr></thead><tbody>${rows}</tbody></table></div></details>`}).join('');
+  return `<div class="bt">${warn}${card(20)}${card(10)}
+    <div class="btcard"><div class="lab">每天的記錄（點開看每檔）</div></div>
+    <div class="cards">${days}</div>
+    <p class="note">${escH(f.rule||'')}。這是從開始記錄那天起的真實結果，記下之後不會再改，也不是事後挑選的，所以比回測更可信。最後更新資料日：${escH(f.lastDate||'')}。同一天記錄的股票是一起買的，持有期間不同天的記錄會重疊，實際獨立的樣本比筆數少。</p></div>`;
+}
+function monthHtml(bm){
+  if(!bm||!bm.length)return '';
+  const rec=bm.slice(-12).reverse();
+  const last=bm.slice(-3);
+  const bad=last.length===3&&last.every(x=>x.excess<0);
+  const warn=bad?'<div class="notice">最近 3 個月，這套排名都比對照組差。要特別小心，它可能正在失效，或是行情轉成不適合追強勢股。</div>':'';
+  const rows=rec.map(x=>`<tr><td>${x.m}</td><td>${x.days}</td><td class="${upDn(x.avg)}">${fp(x.avg)}</td><td class="${upDn(x.excess)}">${fp(x.excess)}</td></tr>`).join('');
+  return `<div class="btcard"><div class="lab">按進場月份看（最近 12 個月）</div>${warn}
+    <table><thead><tr><th>月份</th><th>天數</th><th>平均</th><th>比對照組</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="sub">每個月的結果差很多，這才是真實的樣子。看長期平均時，別忘了最近有沒有失效。</div></div>`;
+}
 function btHtml(bt,top,hold){
   const chips=(kind,vals,cur,label)=>`<div class="grp"><h3>${label}</h3><div class="chips">${vals.map(v=>`<button type="button" class="chip" data-bt="${kind}" data-v="${v}" aria-pressed="${String(v)===String(cur)}">${kind==='top'?v+' 檔':v+' 天'}</button>`).join('')}</div></div>`;
   const ctl=chips('top',bt.tops,top,'每天買排名最前面的')+chips('hold',bt.holds,hold,'持有幾天');
@@ -375,6 +418,7 @@ function btHtml(bt,top,hold){
       <div class="sub">只在大盤站上月線時買：比對照組${r.okOnly.excess>=0?'多賺 ':'少賺 '}${r.okOnly.n?Math.abs(r.okOnly.excess).toFixed(2)+'%（'+r.okOnly.n+' 筆）':'—'}</div></div>
     <div class="btcard"><div class="lab">依進場當天的大盤狀態</div>
       <table><thead><tr><th>大盤</th><th>筆數</th><th>勝率</th><th>平均</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${monthHtml(r.byMonth)}
     <p class="note">回測期間 ${bt.range.from} ~ ${bt.range.to}，共 ${bt.range.days} 個交易日；同期加權指數 ${fp(bt.indexReturnPct)}。手續費 ${bt.params.buyFeePct}% 買賣各一次，證交稅 0.3%。隔天開盤買進，開盤漲停買不到的已跳過。同一天買的股票持有期間會重疊，實際獨立的樣本比筆數少。排名方式是看過這段資料才挑的，真實表現通常會比回測差。沒有算價差和買不到的情況，不保證未來。</p></div>`;
 }
 
@@ -405,7 +449,7 @@ function holdStatus(s,dates,h){
   const $=s=>document.querySelector(s);
   const esc=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const KEY='scan-v2';
-  const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go',btTop:'10',btHold:'20',bt:undefined,btLoading:false,holds:[]};
+  const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go',btTop:'10',btHold:'20',bt:undefined,btLoading:false,btView:'past',fw:undefined,fwLoading:false,holds:[]};
   const HKEY='hold-v1';
   try{const h=JSON.parse(localStorage.getItem(HKEY)||'[]');if(Array.isArray(h))state.holds=h.filter(x=>x&&x.code&&x.price>0&&x.date)}catch(e){}
   function saveHolds(){try{localStorage.setItem(HKEY,JSON.stringify(state.holds))}catch(e){}}
@@ -531,9 +575,17 @@ function holdStatus(s,dates,h){
     if(state.tab==='hold'){$('#notice').innerHTML='';$('#list').innerHTML=holdHtml(d);return}
     if(state.tab==='bt'){
       $('#notice').innerHTML='';
-      if(state.bt===undefined){loadBt();$('#list').innerHTML='<div class="empty">讀取中…</div>';}
-      else if(state.bt===null)$('#list').innerHTML='<div class="empty">還沒有回測資料。到 GitHub 的 Actions 頁面執行「回測」，大約要 1 到 2 小時。</div>';
-      else $('#list').innerHTML=btHtml(state.bt,state.btTop,state.btHold);
+      const vc=viewChips(state.btView);
+      let body;
+      if(state.btView==='fwd'){
+        if(state.fw===undefined){loadFw();body='<div class="empty">讀取中…</div>'}
+        else body=fwHtml(state.fw);
+      }else{
+        if(state.bt===undefined){loadBt();body='<div class="empty">讀取中…</div>'}
+        else if(state.bt===null)body='<div class="empty">還沒有回測資料。到 GitHub 的 Actions 頁面執行「回測」，大約要 1 到 2 小時。</div>';
+        else body=btHtml(state.bt,state.btTop,state.btHold);
+      }
+      $('#list').innerHTML=vc+body;
       return;
     }
     const cur=sets[state.tab];
@@ -554,6 +606,17 @@ function holdStatus(s,dates,h){
     const skipped=d.stocks.length-res.rows.length;
     if(skipped>0)msg(`有 ${skipped} 檔資料不足 125 日，已略過。`);
   }
+  function loadFw(){
+    if(state.fwLoading||state.fw!==undefined)return;
+    state.fwLoading=true;
+    fetch('data/forward.json',{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+      .then(j=>{if(!j||!Array.isArray(j.days))throw new Error('格式不對');state.fw=j}).catch(()=>{state.fw=null})
+      .then(()=>{state.fwLoading=false;render()});
+  }
+  function viewChips(cur){
+    const c=(v,t)=>`<button type="button" class="chip" data-bt="view" data-v="${v}" aria-pressed="${cur===v}">${t}</button>`;
+    return `<div class="grp" style="margin-bottom:14px"><div class="chips">${c('past','過去回測')}${c('fwd','往後記錄（真實結果）')}</div></div>`;
+  }
   function loadBt(){
     if(state.btLoading||state.bt!==undefined)return;
     state.btLoading=true;
@@ -565,7 +628,7 @@ function holdStatus(s,dates,h){
 
   document.addEventListener('click',e=>{
     const chip=e.target.closest('.chip');
-    if(chip&&chip.dataset.bt){if(chip.dataset.bt==='top')state.btTop=chip.dataset.v;else state.btHold=chip.dataset.v;save();render();return}
+    if(chip&&chip.dataset.bt){if(chip.dataset.bt==='view')state.btView=chip.dataset.v;else if(chip.dataset.bt==='top')state.btTop=chip.dataset.v;else state.btHold=chip.dataset.v;save();render();return}
     if(chip){const k=chip.dataset.k;state.on[k]=!state.on[k];chip.setAttribute('aria-pressed',String(state.on[k]));save();render();return}
     if(e.target.closest('#addHold')){
       const code=$('#hCode').value.trim(),price=parseFloat($('#hPrice').value),date=$('#hDate').value,lots=parseFloat($('#hLots').value)||0;

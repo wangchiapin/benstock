@@ -126,11 +126,16 @@ for (const top of TOPS) {
       const a = all.filter(x => x.state === st);
       byState[st] = a.length ? { n: a.length, win: stats(a.map(x => x.r)).win, avg: stats(a.map(x => x.r)).avg, excess: ex(a) } : { n: 0 };
     }
+    const months = {};
+    for (const x of all) { const m = dates[x.t].slice(0, 7); (months[m] = months[m] || []).push(x); }
+    const byMonth = Object.keys(months).sort().map(m => ({ m, days: new Set(months[m].map(x => x.t)).size, n: months[m].length,
+      avg: round2(mean(months[m].map(x => x.r)) * 100), excess: ex(months[m]) }));
     const okOnly = all.filter(x => x.ok);
     results[top][h] = {
       rule: stats(all.map(x => x.r)),
       excess: ex(all),
       parts: [0, 1, 2].map(i => { const a = part(i); return Object.assign({ excess: ex(a) }, stats(a.map(x => x.r))); }),
+      byMonth,
       okOnly: Object.assign({ excess: ex(okOnly) }, stats(okOnly.map(x => x.r))),
       withStopAvg: all.length ? round2(mean(all.map(x => x.rs)) * 100) : null,
       base: baseVals.length ? round2(mean(baseVals) * 100) : null,

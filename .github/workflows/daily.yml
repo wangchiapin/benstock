@@ -23,6 +23,14 @@ jobs:
           python-version: "3.12"
       - name: 抓證交所資料
         run: python scripts/fetch.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 記錄今天的排名前幾檔，並更新往後記錄的成績
+        continue-on-error: true   # 這步失敗不影響上面抓到的股價資料存檔
+        run: |
+          python scripts/fetch.py --export "$RUNNER_TEMP/history.json" --keep 200
+          node scripts/record.js "$RUNNER_TEMP/history.json" index.html data/forward.json
       - name: 有變動就存回 repo
         if: always()         # 就算中途失敗，已經抓到的也先存起來
         run: |
