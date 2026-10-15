@@ -185,14 +185,16 @@ details[open]>summary .chev{transform:rotate(-135deg)}
     <details class="filters-box" id="filtersBox">
       <summary>篩選條件<span class="chev"></span></summary>
       <div class="fbody">
-        <div class="grp"><h3>基本門檻（先篩掉冷門股和風險股）</h3><div class="chips" id="g1"></div></div>
+        <div class="grp"><h3>基本門檻（先篩掉冷門股、風險股和已暴衝的股票）</h3><div class="chips" id="g1"></div></div>
                 <details class="adj">
           <summary>調整數字</summary>
           <div class="nums">
             <label for="minTurn">20日均成交金額（萬）<input id="minTurn" type="number" inputmode="numeric" min="0" step="500"></label>
             <label for="minPrice">股價下限（元）<input id="minPrice" type="number" inputmode="decimal" min="0" step="1"></label>
             <label for="topN">列出前幾檔<input id="topN" type="number" inputmode="numeric" min="1" max="50" step="1"></label>
-            <label for="stopDays">停損參考：近幾日低點<input id="stopDays" type="number" inputmode="numeric" min="3" max="30" step="1"></label>
+            <label for="maxR20">暴衝：近 20 日漲幅超過（%）<input id="maxR20" type="number" inputmode="numeric" min="10" max="300" step="5"></label>
+            <label for="maxRsi">暴衝：RSI 超過<input id="maxRsi" type="number" inputmode="numeric" min="50" max="100" step="1"></label>
+            <label for="stopPct">停損：買進價往下（%）<input id="stopPct" type="number" inputmode="decimal" min="3" max="50" step="1"></label>
             <label for="capital">資金（萬元）<input id="capital" type="number" inputmode="numeric" min="1" step="10"></label>
             <label for="riskPct">單筆最多虧（% 資金）<input id="riskPct" type="number" inputmode="decimal" min="0.1" max="5" step="0.1"></label>
           </div>
@@ -205,7 +207,7 @@ details[open]>summary .chev{transform:rotate(-135deg)}
     <div id="notice"></div>
     <div id="list"></div>
     <div class="foot">
-      <p>排名依據：近 20 日漲幅，加上離 120 日高點的距離（愈接近高點愈好），在合格股票裡各排百分位後相加。這是過去統計上略占優勢的做法，勝率約 45%，不能保證獲利。本工具不構成投資建議。</p>
+      <p>排名依據：近 20 日漲幅，加上離 120 日高點的距離（愈接近高點愈好），在合格股票裡各排百分位後相加。這是過去統計上略占優勢的做法，勝率約 45%，優勢小、會隨行情翻轉，不能保證獲利。已經暴衝（近 20 日漲太多、RSI 太高）的股票預設排除。停損預設買進價往下 20%：歷史上單筆最大虧損約 −29%，平均報酬比不設停損少約 0.6%。本工具不構成投資建議。</p>
       <details>
         <summary>資料檔格式（給每日更新腳本用，每檔至少 125 日）</summary>
         <pre>{
@@ -231,9 +233,9 @@ details[open]>summary .chev{transform:rotate(-135deg)}
 
 <script>
 //<core>
-const DEFAULT_CFG={minTurn:5000,minPrice:15,topN:10,stopDays:20,capital:50,riskPct:1};
-const DEFAULT_ON={liq:true,price:true,safe:true};
-const FAIL_LABEL={liq:'成交金額太小',price:'股價低於門檻',safe:'處置、注意或虧損股'};
+const DEFAULT_CFG={minTurn:5000,minPrice:15,maxR20:40,maxRsi:80,topN:10,stopPct:20,capital:50,riskPct:1};
+const DEFAULT_ON={liq:true,price:true,safe:true,calm:true};
+const FAIL_LABEL={liq:'成交金額太小',price:'股價低於門檻',safe:'處置、注意或虧損股',calm:'近期已暴衝，追高風險大'};
 const MIN_BARS=125;  // 離 120 日高點要用 120 天，再多留幾天
 
 function mean(a){let s=0;for(const x of a)s+=x;return s/a.length}
@@ -258,13 +260,14 @@ function metrics(s,cfg){
     near120:price/Math.max(...h.slice(n-120,n)),
     vol:v[n-1],prev5:mean(v.slice(n-6,n-1)),
     high20:Math.max(...h.slice(n-21,n-1)),
-    stop:Math.min(...l.slice(n-cfg.stopDays,n))*0.99,
+    stop:price*(1-cfg.stopPct/100),
     inst:s.inst||0,rev:(typeof s.revYoy==='number')?s.revYoy:null,
     risky:!!(s.flags&&s.flags.length)
   };
 }
 function evaluate(m,cfg,on){
-  const chk={liq:m.turn>=cfg.minTurn*1e4, price:m.price>=cfg.minPrice, safe:!m.risky};
+  const chk={liq:m.turn>=cfg.minTurn*1e4, price:m.price>=cfg.minPrice, safe:!m.risky,
+    calm:m.ret20*100<cfg.maxR20&&m.rsi<cfg.maxRsi};
   const reasons=[];
   for(const k of Object.keys(FAIL_LABEL))if(on[k]&&!chk[k])reasons.push(FAIL_LABEL[k]);
   const riskPct=(m.price-m.stop)/m.price;
@@ -414,17 +417,18 @@ function btHtml(bt,top,hold){
     <div class="btcard"><div class="lab">比對照組多賺多少，把期間切成三段</div></div>
     <div class="bt3">${part('前段',r.parts[0])}${part('中段',r.parts[1])}${part('後段',r.parts[2])}</div>
     <div class="btcard"><div class="lab">對照</div>
-      <div class="sub">不設停損（預設）：平均 <span class="${upDn(R.avg)}">${fp(R.avg)}</span>　設停損：平均 <span class="${upDn(r.withStopAvg)}">${fp(r.withStopAvg)}</span></div>
+      <div class="sub">不設停損：平均 <span class="${upDn(R.avg)}">${fp(R.avg)}</span>　設停損（買進價 -${bt.params.stopPct||20}%）：平均 <span class="${upDn(r.withStopAvg)}">${fp(r.withStopAvg)}</span></div>
       <div class="sub">只在大盤站上月線時買：比對照組${r.okOnly.excess>=0?'多賺 ':'少賺 '}${r.okOnly.n?Math.abs(r.okOnly.excess).toFixed(2)+'%（'+r.okOnly.n+' 筆）':'—'}</div></div>
     <div class="btcard"><div class="lab">依進場當天的大盤狀態</div>
       <table><thead><tr><th>大盤</th><th>筆數</th><th>勝率</th><th>平均</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${monthHtml(r.byMonth)}
-    <p class="note">回測期間 ${bt.range.from} ~ ${bt.range.to}，共 ${bt.range.days} 個交易日；同期加權指數 ${fp(bt.indexReturnPct)}。手續費 ${bt.params.buyFeePct}% 買賣各一次，證交稅 0.3%。隔天開盤買進，開盤漲停買不到的已跳過。同一天買的股票持有期間會重疊，實際獨立的樣本比筆數少。排名方式是看過這段資料才挑的，真實表現通常會比回測差。沒有算價差和買不到的情況，不保證未來。</p></div>`;
+    <p class="note">回測期間 ${bt.range.from} ~ ${bt.range.to}，共 ${bt.range.days} 個交易日；同期加權指數 ${fp(bt.indexReturnPct)}。手續費 ${bt.params.buyFeePct}% 買賣各一次，證交稅 0.3%。隔天開盤買進，開盤漲停買不到的已跳過。同一天買的股票持有期間會重疊，實際獨立的樣本比筆數少。排名方式是看過這段資料才挑的，真實表現通常會比回測差。選股前已排除近 20 日漲超過 ${bt.params.maxR20||40}% 或 RSI 超過 ${bt.params.maxRsi||80} 的股票，對照組則沒有排除。沒有算價差和買不到的情況，不保證未來。</p></div>`;
 }
 
 // ───────── 持股的賣出提醒 ─────────
 // 規則（回測參考）：跌破 20 日線、或持有滿 20 個交易日，就提醒賣出；從高點回落超過 10% 提醒留意
-function holdStatus(s,dates,h){
+function holdStatus(s,dates,h,stopPct){
+  stopPct=stopPct>0?stopPct:20;
   const c=s&&s.closes;
   if(!Array.isArray(c)||c.length<21||!(h.price>0))return null;
   const n=c.length,price=c[n-1],ma20=mean(c.slice(n-20));
@@ -436,11 +440,12 @@ function holdStatus(s,dates,h){
   const dd=price/peak-1;
   const gross=price/h.price-1,netPl=price*(1-0.001425-0.003)/(h.price*(1+0.001425))-1;
   const alerts=[];
-  const below=price<ma20,full=held>=20;
+  const below=price<ma20,full=held>=20,hitStop=gross<=-stopPct/100;
+  if(hitStop)alerts.push('已跌到停損線（買進價 -'+stopPct+'%），建議賣出');
   if(below)alerts.push('收盤跌破 20 日線（'+ma20.toFixed(2)+'），建議賣出');
   if(full)alerts.push('已持有滿 20 個交易日，可以賣出');
   if(dd<=-0.10)alerts.push('從買進後高點回落 '+(dd*100).toFixed(1)+'%，留意');
-  const level=(below||full)?'sell':(dd<=-0.10?'warn':'ok');
+  const level=(below||full||hitStop)?'sell':(dd<=-0.10?'warn':'ok');
   return {price,ma20,held,peak,dd,gross,netPl,alerts,level,dist20:price/ma20-1};
 }
 //</core>
@@ -448,7 +453,7 @@ function holdStatus(s,dates,h){
 (function(){
   const $=s=>document.querySelector(s);
   const esc=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const KEY='scan-v2';
+  const KEY='scan-v3';
   const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go',btTop:'10',btHold:'20',bt:undefined,btLoading:false,btView:'past',fw:undefined,fwLoading:false,holds:[]};
   const HKEY='hold-v1';
   try{const h=JSON.parse(localStorage.getItem(HKEY)||'[]');if(Array.isArray(h))state.holds=h.filter(x=>x&&x.code&&x.price>0&&x.date)}catch(e){}
@@ -467,7 +472,7 @@ function holdStatus(s,dates,h){
   function save(){try{localStorage.setItem(KEY,JSON.stringify({cfg:state.cfg,on:state.on,tab:state.tab,btTop:state.btTop,btHold:state.btHold}))}catch(e){}}
 
   const CHIPS={
-    g1:[['liq','成交金額夠大'],['price','股價高於門檻'],['safe','排除風險股']]
+    g1:[['liq','成交金額夠大'],['price','股價高於門檻'],['safe','排除風險股'],['calm','排除已暴衝的股票']]
   };
   function drawChips(){
     for(const g of Object.keys(CHIPS)){
@@ -500,7 +505,7 @@ function holdStatus(s,dates,h){
     if(m.inst>=3)bonus.push(`<span class="tag">法人連買 ${m.inst} 日</span>`);
     if(m.rev!==null&&m.rev>0)bonus.push(`<span class="tag">營收年增 ${m.rev.toFixed(1)}%</span>`);
     const lots=lotsFor(m,cfg);
-    const stopLine=tab==='out'?`<span>季線 <b>${f2(m.ma60)}</b></span>`:`<span class="stop">參考停損 <b>${f2(m.stop)}</b>（-${(ev.riskPct*100).toFixed(1)}%）${lots>0?' · 約 '+lots+' 張':''}</span>`;
+    const stopLine=tab==='out'?`<span>季線 <b>${f2(m.ma60)}</b></span>`:`<span class="stop">停損價 <b>${f2(m.stop)}</b>（買進價 -${cfg.stopPct}%）${lots>0?' · 約 '+lots+' 張':''}</span>`;
     return `<details class="card${dim?' dim':''}"><summary>
       <div class="r1"><div class="nm"><b>${esc(s.name||s.code)}</b><span class="cd">${esc(s.code||'')}</span></div><div class="sc" title="排名分數（0 到 100，愈高愈靠前）">${tab==="out"?"—":ev.score}<small>${tab==="out"?"":"分"}</small></div></div>
       <div class="r2"><div class="px"><span class="p">${f2(m.price)}</span><span class="chg ${cls}">${pc(m.chg)}</span></div>${spark(s.closes)}</div>
@@ -530,7 +535,7 @@ function holdStatus(s,dates,h){
     const cards=state.holds.map((h,i)=>{
       const s=d.stocks.find(x=>x.code===h.code);
       if(!s)return `<div class="hcard"><div class="top2"><b>${esc(h.code)}</b></div><div class="sub">資料裡找不到這檔（可能不是上市股票，或已下市）。</div><button class="del" data-del="${i}" type="button">刪除</button></div>`;
-      const st=holdStatus(s,d.dates,h);
+      const st=holdStatus(s,d.dates,h,state.cfg.stopPct);
       if(!st)return `<div class="hcard"><div class="top2"><b>${esc(s.name)}</b><span class="cd">${esc(h.code)}</span></div><div class="sub">資料天數不夠，無法判斷。</div><button class="del" data-del="${i}" type="button">刪除</button></div>`;
       const cls=st.netPl>=0?'up':'dn';
       const lot=h.lots>0?`　約 ${(h.lots*1000*(st.price-h.price)).toLocaleString('en-US',{maximumFractionDigits:0})} 元（未扣費用）`:'';
@@ -540,7 +545,7 @@ function holdStatus(s,dates,h){
         <div class="sub">已持有 ${st.held} 個交易日　20 日線 ${f2(st.ma20)}（${pc(st.dist20)}）　高點回落 ${(st.dd*100).toFixed(1)}%</div>
         ${al}<button class="del" data-del="${i}" type="button">刪除</button></div>`;
     }).join('');
-    return form+keep+cards+'<p class="foot">提醒規則：收盤跌破 20 日線，或持有滿 20 個交易日，就是賣出訊號。回測裡這個賣法平均報酬不比固定持有 20 天差，但勝率較低（約 36%），不保證每次都比較好。只用收盤資料，不會即時通知，要打開網頁才看得到。持股只存在你這支手機的瀏覽器裡。</p>';
+    return form+keep+cards+'<p class="foot">提醒規則：收盤跌破 20 日線、持有滿 20 個交易日，或跌到買進價往下停損線（預設 20%，可在「篩選條件 → 調整數字」改），就是賣出訊號。回測裡這個賣法平均報酬不比固定持有 20 天差，但勝率較低（約 36%），不保證每次都比較好。只用收盤資料，不會即時通知，要打開網頁才看得到。持股只存在你這支手機的瀏覽器裡。</p>';
   }
   function render(){
     const d=state.data,cfg=state.cfg;

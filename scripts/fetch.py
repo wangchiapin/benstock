@@ -34,6 +34,8 @@ LATEST = os.path.join(DATA, "latest.json")
 
 URL_DAY = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={d}&type=ALLBUT0999&response=json"
 URL_EX = "https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate={a}&endDate={b}&response=json"
+GAP_ADJ = 0.12     # 開盤價和前一天收盤價差超過這個比例，就當作分割或減資來還原
+GAP_LOG = []       # 這次還原了哪些事件（代號、日期、倍率）
 KEEP_LATEST = 130  # 網頁用的資料留幾個交易日
 SLEEP = 5          # 每次請求之間等幾秒（證交所不喜歡抓太快）
 TW = dt.timezone(dt.timedelta(hours=8))
@@ -274,6 +276,13 @@ def build_series(days, events):
                     s[k].append(p)
                 s["v"].append(0)
                 s["e"] += 1
+            # 股票分割、減資等：開盤價跟前一天收盤價差超過 12%（正常漲跌幅上限 10%），
+            # 這不是真的漲跌，把之前的價格換算過去，價格才接得起來。除權息已經在上面處理過了。
+            if s["c"] and s["c"][-1] > 0 and o > 0 and sh > 0 and abs(o / s["c"][-1] - 1) > GAP_ADJ:
+                g = o / s["c"][-1]
+                for k in ("o", "h", "l", "c"):
+                    s[k] = [x * g for x in s[k]]
+                GAP_LOG.append((code, date, round(g, 3)))
             s["o"].append(o); s["h"].append(h); s["l"].append(l); s["c"].append(c)
             s["v"].append(int(round(sh / 1000)))  # 股 → 張
             s["e"] = i
@@ -344,6 +353,7 @@ def main(argv=None):
         adjusted = need <= set(ex["months"]) | {today.strftime("%Y-%m")}
         days = [load_raw(d) for d in dates]
         obj = to_export(days, build_series(days, ex["events"]), adjusted)
+        print(f"分割或減資還原：{len(GAP_LOG)} 件")
         with open(a.export, "w", encoding="utf-8") as f:
             json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
         print(f"匯出 {len(obj['dates'])} 天、{len(obj['stocks'])} 檔（含已下市），已還原除權息：{adjusted}")
@@ -357,6 +367,7 @@ def main(argv=None):
     events, adjusted = update_exdiv(dt.date.fromisoformat(dates[0]), dt.date.fromisoformat(dates[-1]), today)
     days = [load_raw(d) for d in dates[-KEEP_LATEST:]]
     latest = to_latest(days, build_series(days, events), adjusted)
+    print(f"分割或減資還原：{len(GAP_LOG)} 件")
     if len(latest["stocks"]) < 500:
         raise RuntimeError(f"只有 {len(latest['stocks'])} 檔股票，太少了，不寫入")
     changed = write_if_changed(LATEST, latest)

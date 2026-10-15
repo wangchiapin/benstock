@@ -5,7 +5,8 @@
 // 模擬規則：
 //   - 每天收盤後，照網頁的排名（近 20 日漲幅 + 離 120 日高點的距離）選前 K 檔，隔天開盤買進
 //     （開盤已漲停買不到就跳過、停牌也跳過）
-//   - 持有 10 / 20 / 30 個交易日後，用收盤價賣出（預設不設停損；另外算「設停損」的結果當對照）
+//   - 持有 10 / 20 / 30 個交易日後，用收盤價賣出（主要結果不設停損；另外算「買進價往下 20%」停損的結果當對照）
+//   - 選股前先排除已暴衝的股票（近 20 日漲超過 40% 或 RSI 超過 80）；對照組則不排除
 //   - 手續費 0.1425%（買賣各一次，可乘上折扣），證交稅 0.3%（賣出）
 //   - 對照組：同一天基本門檻（成交金額夠大、股價夠高）合格的所有股票平均，同樣買賣
 //   - 同一天買的股票持有期間會重疊，所以筆數看起來很多，實際獨立的樣本比筆數少
@@ -38,7 +39,7 @@ const round2 = x => Math.round(x * 100) / 100;
 const net = (entry, exit) => (exit * (1 - SELL_FEE - TAX)) / (entry * (1 + BUY_FEE)) - 1;
 
 // 模擬一筆：第 t 天收盤後選到，隔天開盤買，持有 h 天。回傳扣成本後的報酬（小數），無法成交或還沒到期回傳 null
-function sim(st, t, h, stop) {
+function sim(st, t, h, stopPct) {
   if (t + h > T - 1) return null;
   const k1 = t + 1 - st.s;
   if (k1 < 0 || t + 1 > st.e) return null;
@@ -48,7 +49,8 @@ function sim(st, t, h, stop) {
   const last = Math.min(t + h, st.e);
   for (let j = t + 1; j <= last; j++) {
     const k = j - st.s;
-    if (stop > 0 && st.lows[k] <= stop) return net(entry, Math.min(stop, st.opens[k]));
+    const sp = stopPct > 0 ? entry * (1 - stopPct) : 0;
+    if (sp > 0 && st.lows[k] <= sp) return net(entry, Math.min(sp, st.opens[k]));
     if (j === last) return net(entry, st.closes[k]);
   }
   return null;
@@ -89,11 +91,12 @@ for (let t = WARM; t < T - 1; t++) {
   stateDays[state] = (stateDays[state] || 0) + 1;
 
   const picks = res.rows.filter(x => x.ev.pass).sort((a, b) => b.ev.rank - a.ev.rank);
+  const gate = res.rows.filter(x => x.ev.chk.liq && x.ev.chk.price && x.ev.chk.safe);   // 對照組：只看基本門檻，不排除暴衝股
   if (picks.length) { signalDays++; pickSum += picks.length; }
   // 對照組：基本門檻合格的全部股票，不設停損
   for (const h of HOLDS) {
     const rs = [];
-    for (const x of picks) {
+    for (const x of gate) {
       const r = sim(x.s.full, t, h, 0);
       if (r !== null) rs.push(r);
     }
@@ -102,7 +105,7 @@ for (let t = WARM; t < T - 1; t++) {
   for (const top of TOPS) {
     for (const x of picks.slice(0, top)) {
       for (const h of HOLDS) {
-        const r = sim(x.s.full, t, h, 0), rs = sim(x.s.full, t, h, x.m.stop);
+        const r = sim(x.s.full, t, h, 0), rs = sim(x.s.full, t, h, DEFAULT_CFG.stopPct / 100);
         if (r !== null) trades[top + '|' + h].push({ t, r, rs, state, ok });
       }
     }
@@ -148,8 +151,8 @@ const out = {
   generatedAt: new Date().toISOString(),
   range: { from: dates[WARM], to: dates[T - 1], days: evalDays, totalDays: T },
   adjustedExDiv: !!H.adjusted,
-  params: { feeDiscount, buyFeePct: round2(BUY_FEE * 100 * 1000) / 1000, taxPct: 0.3, stopDays: DEFAULT_CFG.stopDays,
-            entry: '隔天開盤買進', rank: '近 20 日漲幅 + 離 120 日高點的距離', exit: '持有到期收盤賣出，不設停損', marketFilter: '不看大盤' },
+  params: { feeDiscount, buyFeePct: round2(BUY_FEE * 100 * 1000) / 1000, taxPct: 0.3, stopPct: DEFAULT_CFG.stopPct, maxR20: DEFAULT_CFG.maxR20, maxRsi: DEFAULT_CFG.maxRsi,
+            entry: '隔天開盤買進', rank: '近 20 日漲幅 + 離 120 日高點的距離', exit: '持有到期收盤賣出，主要結果不設停損', marketFilter: '不看大盤' },
   indexReturnPct: round2((mk[T - 1] / mk[WARM] - 1) * 100),
   stateDays, signalDays, avgPicksPerSignalDay: signalDays ? round2(pickSum / signalDays) : 0,
   tops: TOPS, holds: HOLDS, results
