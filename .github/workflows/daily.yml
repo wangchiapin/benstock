@@ -9,13 +9,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: daily-fetch
+  group: data-fetch          # 跟「回測」共用，避免兩個同時寫資料
   cancel-in-progress: false
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,10 +24,11 @@ jobs:
       - name: 抓證交所資料
         run: python scripts/fetch.py
       - name: 有變動就存回 repo
+        if: always()         # 就算中途失敗，已經抓到的也先存起來
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/latest.json
+          git add data
           if git diff --cached --quiet; then
             echo "沒有變動"
           else

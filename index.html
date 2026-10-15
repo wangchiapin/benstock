@@ -59,7 +59,7 @@ h1{font-size:22px;line-height:1.25;margin:0;font-weight:700;letter-spacing:.02em
 .market .num{font-family:var(--mono);font-size:13px}
 .dot{width:10px;height:10px;border-radius:50%;background:currentColor;flex:none}
 
-.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--chip);border-radius:14px;padding:5px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--chip);border-radius:14px;padding:5px}
 .tab{min-height:52px;border:0;border-radius:10px;background:transparent;color:var(--muted);display:grid;place-items:center;align-content:center;line-height:1.2;padding:4px}
 .tab .n{font-family:var(--mono);font-size:20px;font-weight:500}
 .tab .t{font-size:12.5px}
@@ -113,6 +113,19 @@ details[open]>summary .chev{transform:rotate(-135deg)}
 .foot{margin-top:18px;color:var(--muted);font-size:12.5px;display:grid;gap:10px}
 .foot pre{margin:8px 0 0;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.5}
 .foot summary{cursor:pointer;color:var(--accent);font-weight:500;min-height:32px;display:flex;align-items:center}
+.bt{display:grid;gap:14px}
+.btcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:4px;min-width:0}
+.btcard .lab{font-size:13px;color:var(--muted)}
+.btcard .big{font-family:var(--mono);font-size:34px;font-weight:500;line-height:1.15}
+.btcard .sub{font-size:13.5px;color:var(--muted)}
+.btcard .mid{font-family:var(--mono);font-size:22px;font-weight:500}
+.bt2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bt table{width:100%;border-collapse:collapse;font-size:13.5px}
+.bt th,.bt td{text-align:right;padding:6px 4px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.bt th:first-child,.bt td:first-child{text-align:left}
+.bt th{color:var(--muted);font-weight:500;font-size:12px}
+.bt .note{font-size:12.5px;color:var(--muted)}
+.bt .notice{margin-bottom:0}
 
 @media (min-width:900px){
   body{padding-block:28px 56px}
@@ -143,6 +156,7 @@ details[open]>summary .chev{transform:rotate(-135deg)}
       <button class="tab" role="tab" data-tab="go" id="tab-go"><span class="n">0</span><span class="t">可進場</span></button>
       <button class="tab" role="tab" data-tab="watch" id="tab-watch"><span class="n">0</span><span class="t">觀察中</span></button>
       <button class="tab" role="tab" data-tab="out" id="tab-out"><span class="n">0</span><span class="t">被淘汰</span></button>
+      <button class="tab" role="tab" data-tab="bt" id="tab-bt"><span class="n">回測</span><span class="t">過去成績</span></button>
     </div>
   </div>
 
@@ -320,23 +334,60 @@ function buildDemo(){
   const mk=genSeries(rng,17500,[{n:100,drift:.0015,noise:.008},{n:30,drift:.0009,noise:.006}],1);
   return {asOf:'2026-10-15',demo:true,market:{closes:mk.closes},stocks};
 }
+
+// ───────── 回測成績畫面（資料來自 data/backtest.json，由 scripts/backtest.js 產生）─────────
+function fp(x,d){if(x===null||x===undefined||isNaN(x))return '—';return (x>0?'+':'')+x.toFixed(d===undefined?2:d)+'%'}
+function upDn(x){return x>0?'up':(x<0?'dn':'')}
+const BT_STATE={strong:'月線上、向上',weakening:'月線上、向下',pullback:'月線下、向上',bear:'月線下、向下'};
+function btHtml(bt,top,hold){
+  const topLbl={'1':'1 檔','3':'3 檔','5':'5 檔','10':'10 檔','all':'全部'};
+  const chips=(kind,vals,cur,label)=>`<div class="grp"><h3>${label}</h3><div class="chips">${vals.map(v=>`<button type="button" class="chip" data-bt="${kind}" data-v="${v}" aria-pressed="${String(v)===String(cur)}">${kind==='top'?topLbl[v]:v+' 天'}</button>`).join('')}</div></div>`;
+  const ctl=chips('top',bt.tops,top,'每天買分數最高的')+chips('hold',bt.holds,hold,'持有幾天');
+  const r=bt.results[top]&&bt.results[top][hold];
+  if(!r||!r.rule.n)return `<div class="bt">${ctl}<div class="empty">這個組合沒有交易紀錄。</div></div>`;
+  const R=r.rule,f=r.first,s=r.second;
+  const diff=(r.base===null||r.base===undefined)?null:R.avg-r.base;
+  let warn='';
+  if(!bt.adjustedExDiv)warn+='<div class="notice">這份回測沒有還原除權息，除息旺季的股價會被誤判成下跌，結果會失真。</div>';
+  if(R.n<100)warn+=`<div class="notice">只有 ${R.n} 筆交易，筆數偏少，參考性低。</div>`;
+  if(f.n&&s.n&&(f.avg>0)!==(s.avg>0))warn+='<div class="notice">前段和後段的結果方向不同。這套條件可能只在過去某段時間有效，要小心。</div>';
+  else if(s.n&&s.avg<=0)warn+='<div class="notice">後段（比較近的那一半）平均是負的，近期沒有賺。</div>';
+  const half=(t,h)=>`<div class="btcard"><div class="lab">${t}</div><div class="mid ${upDn(h.avg)}">${h.n?fp(h.avg):'—'}</div><div class="sub">${h.n?'勝率 '+h.win+'% ・ '+h.n+' 筆':'沒有交易'}</div></div>`;
+  const rows=['strong','weakening','pullback','bear'].map(k=>{const b=r.byState[k];return `<tr><td>${BT_STATE[k]}</td><td>${b.n}</td><td>${b.n?b.win+'%':'—'}</td><td class="${upDn(b.avg)}">${b.n?fp(b.avg):'—'}</td></tr>`}).join('');
+  return `<div class="bt">${ctl}${warn}
+    <div class="btcard"><div class="lab">每筆平均（已扣手續費和證交稅）</div><div class="big ${upDn(R.avg)}">${fp(R.avg)}</div>
+      <div class="sub">勝率 ${R.win}% ・ 共 ${R.n} 筆</div>
+      <div class="sub">賺的時候平均 <span class="${upDn(R.avgWin)}">${fp(R.avgWin)}</span>，賠的時候平均 <span class="${upDn(R.avgLoss)}">${fp(R.avgLoss)}</span></div></div>
+    <div class="btcard"><div class="lab">對照：同一天基本門檻合格的全部股票，同樣持有 ${hold} 天（不設停損）</div>
+      <div class="mid ${upDn(r.base)}">${fp(r.base)}</div>
+      <div class="sub">${diff===null?'':'篩選的結果比對照組'+(diff>=0?'多賺 ':'少賺 ')+Math.abs(diff).toFixed(2)+'%'}</div></div>
+    <div class="bt2">${half('前半段期間',f)}${half('後半段期間',s)}</div>
+    <div class="btcard"><div class="lab">拆開來看</div>
+      <div class="sub">不設停損：平均 <span class="${upDn(r.noStopAvg)}">${fp(r.noStopAvg)}</span>　設停損：平均 <span class="${upDn(R.avg)}">${fp(R.avg)}</span></div>
+      <div class="sub">不看大盤、每天都進場：平均 <span class="${upDn(r.noFilter.avg)}">${fp(r.noFilter.avg)}</span>（${r.noFilter.n} 筆）</div></div>
+    <div class="btcard"><div class="lab">依進場當天的大盤狀態（不看大盤過濾的全部交易）</div>
+      <table><thead><tr><th>大盤</th><th>筆數</th><th>勝率</th><th>平均</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">回測期間 ${bt.range.from} ~ ${bt.range.to}，共 ${bt.range.days} 個交易日；同期加權指數 ${fp(bt.indexReturnPct)}。手續費 ${bt.params.buyFeePct}% 買賣各一次，證交稅 0.3%。隔天開盤買進，開盤漲停買不到的已跳過。這是過去的模擬，沒有算價差和買不到的情況，不保證未來。</p></div>`;
+}
 //</core>
 
 (function(){
   const $=s=>document.querySelector(s);
   const esc=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const KEY='scan-v1';
-  const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go'};
+  const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go',btTop:'3',btHold:'5',bt:undefined,btLoading:false};
 
   try{
     const saved=JSON.parse(localStorage.getItem(KEY)||'null');
     if(saved){
       Object.assign(state.cfg,saved.cfg||{});
       Object.assign(state.on,saved.on||{});
-      if(['go','watch','out'].indexOf(saved.tab)>=0)state.tab=saved.tab;
+      if(['go','watch','out','bt'].indexOf(saved.tab)>=0)state.tab=saved.tab;
+      if(saved.btTop)state.btTop=String(saved.btTop);
+      if(saved.btHold)state.btHold=String(saved.btHold);
     }
   }catch(e){}
-  function save(){try{localStorage.setItem(KEY,JSON.stringify({cfg:state.cfg,on:state.on,tab:state.tab}))}catch(e){}}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify({cfg:state.cfg,on:state.on,tab:state.tab,btTop:state.btTop,btHold:state.btHold}))}catch(e){}}
 
   const CHIPS={
     g1:[['liq','成交金額夠大'],['price','股價高於門檻'],['safe','排除風險股']],
@@ -417,6 +468,14 @@ function buildDemo(){
       $('#tab-'+k).querySelector('.n').textContent=sets[k].length;
       $('#tab-'+k).setAttribute('aria-selected',String(state.tab===k));
     }
+    $('#tab-bt').setAttribute('aria-selected',String(state.tab==='bt'));
+    if(state.tab==='bt'){
+      $('#notice').innerHTML='';
+      if(state.bt===undefined){loadBt();$('#list').innerHTML='<div class="empty">讀取中…</div>';}
+      else if(state.bt===null)$('#list').innerHTML='<div class="empty">還沒有回測資料。到 GitHub 的 Actions 頁面執行「回測」，大約要 1 到 2 小時。</div>';
+      else $('#list').innerHTML=btHtml(state.bt,state.btTop,state.btHold);
+      return;
+    }
     const cur=sets[state.tab];
     let notice='';
     if(state.tab==='go'&&blocked&&go.length)notice=`<div class="notice">大盤目前在月線下方，這 ${go.length} 檔先當作觀察，不建議進場。</div>`;
@@ -431,10 +490,18 @@ function buildDemo(){
     const skipped=d.stocks.length-res.rows.length;
     if(skipped>0)msg(`有 ${skipped} 檔資料不足 65 日，已略過。`);
   }
+  function loadBt(){
+    if(state.btLoading||state.bt!==undefined)return;
+    state.btLoading=true;
+    fetch('data/backtest.json',{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+      .then(j=>{if(!j||!j.results)throw new Error('格式不對');state.bt=j}).catch(()=>{state.bt=null})
+      .then(()=>{state.btLoading=false;render()});
+  }
   function msg(t,err){const e=$('#msg');e.textContent=t||'';e.className=err?'err':''}
 
   document.addEventListener('click',e=>{
     const chip=e.target.closest('.chip');
+    if(chip&&chip.dataset.bt){if(chip.dataset.bt==='top')state.btTop=chip.dataset.v;else state.btHold=chip.dataset.v;save();render();return}
     if(chip){const k=chip.dataset.k;state.on[k]=!state.on[k];chip.setAttribute('aria-pressed',String(state.on[k]));save();render();return}
     const tab=e.target.closest('.tab');
     if(tab){state.tab=tab.dataset.tab;save();render();return}

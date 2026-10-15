@@ -1,0 +1,72 @@
+name: 回測
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 往回抓幾年的歷史資料（第一次約需 1 到 2 小時）
+        default: "3"
+      fee_discount:
+        description: 手續費折扣（1 = 不打折，0.6 = 六折）
+        default: "1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-fetch
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 分批補抓歷史資料（每批存一次，中斷了下次接著抓）
+        env:
+          YEARS: ${{ inputs.years }}
+        run: |
+          DAYS=$(python3 -c "import os; print(int(float(os.environ['YEARS']) * 250))")
+          echo "目標：最近 $DAYS 個交易日"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3 4 5 6 7 8; do
+            set +e
+            python scripts/fetch.py --days "$DAYS" --max-new 150
+            rc=$?
+            set -e
+            git add data
+            if ! git diff --cached --quiet; then
+              git commit -m "補抓歷史資料（第 $i 批）"
+              git push
+            fi
+            if [ "$rc" -eq 0 ]; then break; fi
+            if [ "$rc" -ne 10 ]; then exit "$rc"; fi
+          done
+
+      - name: 匯出長歷史並回測
+        env:
+          YEARS: ${{ inputs.years }}
+          FEE: ${{ inputs.fee_discount }}
+        run: |
+          KEEP=$(python3 -c "import os; print(int(float(os.environ['YEARS']) * 250) + 20)")
+          python scripts/fetch.py --export "$RUNNER_TEMP/history.json" --keep "$KEEP"
+          node scripts/backtest.js "$RUNNER_TEMP/history.json" index.html data/backtest.json --fee-discount "$FEE"
+
+      - name: 把回測成績存回 repo
+        run: |
+          git add data/backtest.json
+          if git diff --cached --quiet; then
+            echo "沒有變動"
+          else
+            git commit -m "更新回測成績 $(date -u +%F)"
+            git push
+          fi
