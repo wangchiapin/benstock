@@ -64,10 +64,10 @@ h1{font-size:22px;line-height:1.25;margin:0;font-weight:700;letter-spacing:.02em
 .market .num{font-family:var(--mono);font-size:13px}
 .dot{width:10px;height:10px;border-radius:50%;background:currentColor;flex:none}
 
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--chip);border-radius:14px;padding:5px}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;background:var(--chip);border-radius:14px;padding:5px}
 .tab{min-height:52px;border:0;border-radius:10px;background:transparent;color:var(--muted);display:grid;place-items:center;align-content:center;line-height:1.2;padding:4px}
 .tab .n{font-family:var(--mono);font-size:20px;font-weight:500}
-.tab .t{font-size:12.5px}
+.tab .t{font-size:12px;white-space:nowrap}
 .tab[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 
 details.filters-box{background:var(--surface);border:1px solid var(--line);border-radius:14px}
@@ -124,6 +124,20 @@ details[open]>summary .chev{transform:rotate(-135deg)}
 .btcard .big{font-family:var(--mono);font-size:34px;font-weight:500;line-height:1.15}
 .btcard .sub{font-size:13.5px;color:var(--muted)}
 .btcard .mid{font-family:var(--mono);font-size:22px;font-weight:500}
+.hform{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:10px;margin-bottom:14px}
+.hform .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hform label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
+.hform input{min-height:42px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:16px;background:var(--bg);color:var(--ink);font-family:var(--mono);min-width:0}
+.hform .go{min-height:44px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:15px;font-weight:500}
+.hcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:8px;margin-bottom:12px}
+.hcard .top2{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.hcard .pl{font-family:var(--mono);font-size:22px;font-weight:500}
+.hcard .sub{font-size:13.5px;color:var(--muted)}
+.hcard .alert{border-radius:10px;padding:8px 12px;font-size:14px}
+.hcard .alert.sell{background:var(--warn-bg);color:var(--warn-ink);font-weight:500}
+.hcard .alert.warn{background:var(--chip);color:var(--ink)}
+.hcard .alert.ok{background:var(--chip);color:var(--muted)}
+.hcard .del{justify-self:end;min-height:36px;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:0 12px;font-size:13px}
 .bt3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .bt table{width:100%;border-collapse:collapse;font-size:13.5px}
 .bt th,.bt td{text-align:right;padding:6px 4px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
@@ -162,6 +176,7 @@ details[open]>summary .chev{transform:rotate(-135deg)}
       <button class="tab" role="tab" data-tab="go" id="tab-go"><span class="n">0</span><span class="t">前幾名</span></button>
       <button class="tab" role="tab" data-tab="watch" id="tab-watch"><span class="n">0</span><span class="t">候補</span></button>
       <button class="tab" role="tab" data-tab="out" id="tab-out"><span class="n">0</span><span class="t">被淘汰</span></button>
+      <button class="tab" role="tab" data-tab="hold" id="tab-hold"><span class="n">0</span><span class="t">持股</span></button>
       <button class="tab" role="tab" data-tab="bt" id="tab-bt"><span class="n">回測</span><span class="t">過去成績</span></button>
     </div>
   </div>
@@ -362,20 +377,45 @@ function btHtml(bt,top,hold){
       <table><thead><tr><th>大盤</th><th>筆數</th><th>勝率</th><th>平均</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="note">回測期間 ${bt.range.from} ~ ${bt.range.to}，共 ${bt.range.days} 個交易日；同期加權指數 ${fp(bt.indexReturnPct)}。手續費 ${bt.params.buyFeePct}% 買賣各一次，證交稅 0.3%。隔天開盤買進，開盤漲停買不到的已跳過。同一天買的股票持有期間會重疊，實際獨立的樣本比筆數少。排名方式是看過這段資料才挑的，真實表現通常會比回測差。沒有算價差和買不到的情況，不保證未來。</p></div>`;
 }
+
+// ───────── 持股的賣出提醒 ─────────
+// 規則（回測參考）：跌破 20 日線、或持有滿 20 個交易日，就提醒賣出；從高點回落超過 10% 提醒留意
+function holdStatus(s,dates,h){
+  const c=s&&s.closes;
+  if(!Array.isArray(c)||c.length<21||!(h.price>0))return null;
+  const n=c.length,price=c[n-1],ma20=mean(c.slice(n-20));
+  let held=0,peak=Math.max(price,h.price);
+  if(Array.isArray(dates)&&dates.length===n){
+    const bi=dates.findIndex(d=>d>=h.date);
+    if(bi>=0){held=n-1-bi;peak=Math.max(peak,...c.slice(bi))}
+  }
+  const dd=price/peak-1;
+  const gross=price/h.price-1,netPl=price*(1-0.001425-0.003)/(h.price*(1+0.001425))-1;
+  const alerts=[];
+  const below=price<ma20,full=held>=20;
+  if(below)alerts.push('收盤跌破 20 日線（'+ma20.toFixed(2)+'），建議賣出');
+  if(full)alerts.push('已持有滿 20 個交易日，可以賣出');
+  if(dd<=-0.10)alerts.push('從買進後高點回落 '+(dd*100).toFixed(1)+'%，留意');
+  const level=(below||full)?'sell':(dd<=-0.10?'warn':'ok');
+  return {price,ma20,held,peak,dd,gross,netPl,alerts,level,dist20:price/ma20-1};
+}
 //</core>
 
 (function(){
   const $=s=>document.querySelector(s);
   const esc=s=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const KEY='scan-v2';
-  const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go',btTop:'10',btHold:'20',bt:undefined,btLoading:false};
+  const state={data:buildDemo(),cfg:Object.assign({},DEFAULT_CFG),on:Object.assign({},DEFAULT_ON),tab:'go',btTop:'10',btHold:'20',bt:undefined,btLoading:false,holds:[]};
+  const HKEY='hold-v1';
+  try{const h=JSON.parse(localStorage.getItem(HKEY)||'[]');if(Array.isArray(h))state.holds=h.filter(x=>x&&x.code&&x.price>0&&x.date)}catch(e){}
+  function saveHolds(){try{localStorage.setItem(HKEY,JSON.stringify(state.holds))}catch(e){}}
 
   try{
     const saved=JSON.parse(localStorage.getItem(KEY)||'null');
     if(saved){
       Object.assign(state.cfg,saved.cfg||{});
       Object.assign(state.on,saved.on||{});
-      if(['go','watch','out','bt'].indexOf(saved.tab)>=0)state.tab=saved.tab;
+      if(['go','watch','out','hold','bt'].indexOf(saved.tab)>=0)state.tab=saved.tab;
       if(saved.btTop)state.btTop=String(saved.btTop);
       if(saved.btHold)state.btHold=String(saved.btHold);
     }
@@ -435,6 +475,29 @@ function btHtml(bt,top,hold){
     </dl></div></details>`;
   }
 
+  function holdHtml(d){
+    const keep=state.holds.length?'':'<div class="empty">還沒有持股。在上面輸入買進的股票，之後每次更新資料，這裡會告訴你該不該賣。</div>';
+    const form=`<div class="hform">
+      <div class="row"><label for="hCode">股票代號<input id="hCode" inputmode="numeric" maxlength="6" placeholder="例如 2330"></label>
+      <label for="hPrice">買進價<input id="hPrice" type="number" inputmode="decimal" step="0.01" min="0"></label></div>
+      <div class="row"><label for="hDate">買進日期<input id="hDate" type="date" value="${esc(d.asOf||'')}"></label>
+      <label for="hLots">張數（選填）<input id="hLots" type="number" inputmode="numeric" min="0" step="1"></label></div>
+      <button class="go" id="addHold" type="button">加入持股</button><div id="hMsg" class="sub" role="status"></div></div>`;
+    const cards=state.holds.map((h,i)=>{
+      const s=d.stocks.find(x=>x.code===h.code);
+      if(!s)return `<div class="hcard"><div class="top2"><b>${esc(h.code)}</b></div><div class="sub">資料裡找不到這檔（可能不是上市股票，或已下市）。</div><button class="del" data-del="${i}" type="button">刪除</button></div>`;
+      const st=holdStatus(s,d.dates,h);
+      if(!st)return `<div class="hcard"><div class="top2"><b>${esc(s.name)}</b><span class="cd">${esc(h.code)}</span></div><div class="sub">資料天數不夠，無法判斷。</div><button class="del" data-del="${i}" type="button">刪除</button></div>`;
+      const cls=st.netPl>=0?'up':'dn';
+      const lot=h.lots>0?`　約 ${(h.lots*1000*(st.price-h.price)).toLocaleString('en-US',{maximumFractionDigits:0})} 元（未扣費用）`:'';
+      const al=st.alerts.length?st.alerts.map(t=>`<div class="alert ${st.level==='ok'?'ok':st.level}">${t}</div>`).join(''):'<div class="alert ok">沒有賣出訊號，可以續抱。</div>';
+      return `<div class="hcard"><div class="top2"><span><b>${esc(s.name)}</b> <span class="cd">${esc(h.code)}</span></span><span class="pl ${cls}">${pc(st.netPl)}</span></div>
+        <div class="sub">買 ${f2(h.price)}（${esc(h.date)}）→ 現價 ${f2(st.price)}，已扣手續費和稅${lot}</div>
+        <div class="sub">已持有 ${st.held} 個交易日　20 日線 ${f2(st.ma20)}（${pc(st.dist20)}）　高點回落 ${(st.dd*100).toFixed(1)}%</div>
+        ${al}<button class="del" data-del="${i}" type="button">刪除</button></div>`;
+    }).join('');
+    return form+keep+cards+'<p class="foot">提醒規則：收盤跌破 20 日線，或持有滿 20 個交易日，就是賣出訊號。回測裡這個賣法平均報酬不比固定持有 20 天差，但勝率較低（約 36%），不保證每次都比較好。只用收盤資料，不會即時通知，要打開網頁才看得到。持股只存在你這支手機的瀏覽器裡。</p>';
+  }
   function render(){
     const d=state.data,cfg=state.cfg;
     $('#asof').textContent='資料日期 '+(d.asOf||'未標示')+'・共 '+d.stocks.length+' 檔';
@@ -463,6 +526,9 @@ function btHtml(bt,top,hold){
       $('#tab-'+k).setAttribute('aria-selected',String(state.tab===k));
     }
     $('#tab-bt').setAttribute('aria-selected',String(state.tab==='bt'));
+    $('#tab-hold').setAttribute('aria-selected',String(state.tab==='hold'));
+    $('#tab-hold').querySelector('.n').textContent=state.holds.length;
+    if(state.tab==='hold'){$('#notice').innerHTML='';$('#list').innerHTML=holdHtml(d);return}
     if(state.tab==='bt'){
       $('#notice').innerHTML='';
       if(state.bt===undefined){loadBt();$('#list').innerHTML='<div class="empty">讀取中…</div>';}
@@ -501,6 +567,16 @@ function btHtml(bt,top,hold){
     const chip=e.target.closest('.chip');
     if(chip&&chip.dataset.bt){if(chip.dataset.bt==='top')state.btTop=chip.dataset.v;else state.btHold=chip.dataset.v;save();render();return}
     if(chip){const k=chip.dataset.k;state.on[k]=!state.on[k];chip.setAttribute('aria-pressed',String(state.on[k]));save();render();return}
+    if(e.target.closest('#addHold')){
+      const code=$('#hCode').value.trim(),price=parseFloat($('#hPrice').value),date=$('#hDate').value,lots=parseFloat($('#hLots').value)||0;
+      const hm=$('#hMsg');
+      if(!/^\d{4}$/.test(code)){hm.textContent='請輸入 4 位數的股票代號。';return}
+      if(!(price>0)){hm.textContent='請輸入買進價。';return}
+      if(!date){hm.textContent='請選買進日期。';return}
+      state.holds.push({code,price,date,lots});saveHolds();render();return;
+    }
+    const del=e.target.closest('[data-del]');
+    if(del){state.holds.splice(+del.dataset.del,1);saveHolds();render();return}
     const tab=e.target.closest('.tab');
     if(tab){state.tab=tab.dataset.tab;save();render();return}
   });
