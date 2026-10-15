@@ -2,13 +2,13 @@
 // 回測：用網頁（index.html）同一套篩選規則，對過去每一天重新篩一次，模擬買賣，算成績。
 // 用法：node scripts/backtest.js 歷史檔.json index.html 輸出.json [--fee-discount 1]
 //
-// 模擬規則（照網頁預設）：
-//   - 收盤後篩選，隔天開盤買進（開盤已漲停買不到就跳過、停牌也跳過）
-//   - 持有 3 / 5 / 10 / 20 個交易日後，用收盤價賣出
-//   - 中途最低價碰到停損價就先賣（停損價用網頁算出來的「近 10 日低點再低 1%」；開盤直接跳空跌破就用開盤價賣）
+// 模擬規則：
+//   - 每天收盤後，照網頁的排名（近 20 日漲幅 + 離 120 日高點的距離）選前 K 檔，隔天開盤買進
+//     （開盤已漲停買不到就跳過、停牌也跳過）
+//   - 持有 10 / 20 / 30 個交易日後，用收盤價賣出（預設不設停損；另外算「設停損」的結果當對照）
 //   - 手續費 0.1425%（買賣各一次，可乘上折扣），證交稅 0.3%（賣出）
-//   - 「照網頁規則」只在大盤站上月線時進場；「不看大盤」每天都進場，用來看大盤過濾有沒有用
-//   - 對照組：當天基本門檻（成交金額夠大、股價夠高）合格的所有股票平均，同樣買賣規則但不設停損
+//   - 對照組：同一天基本門檻（成交金額夠大、股價夠高）合格的所有股票平均，同樣買賣
+//   - 同一天買的股票持有期間會重疊，所以筆數看起來很多，實際獨立的樣本比筆數少
 const fs = require('fs');
 
 const [, , histPath, htmlPath, outPath, ...rest] = process.argv;
@@ -28,10 +28,10 @@ const { runAll, DEFAULT_CFG, DEFAULT_ON } = new Function(mm[1] + ';return {runAl
 
 const H = JSON.parse(fs.readFileSync(histPath, 'utf8'));
 const dates = H.dates, mk = H.market.closes, stocks = H.stocks, T = dates.length;
-const HOLDS = [3, 5, 10, 20], TOPS = [1, 3, 5, 10, 'all'];
+const HOLDS = [10, 20, 30], TOPS = [3, 5, 10, 20];
 const BUY_FEE = 0.001425 * feeDiscount, SELL_FEE = 0.001425 * feeDiscount, TAX = 0.003;
-const WARM = 64, WIN = 130;
-const OK_STATES = new Set(['strong', 'weakening']);   // 月線上方
+const WARM = 125, WIN = 130;
+const OK_STATES = new Set(['strong', 'weakening']);   // 月線上方（只用來對照，不影響選股）
 
 const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
 const round2 = x => Math.round(x * 100) / 100;
@@ -65,7 +65,7 @@ function stats(a) {
   };
 }
 
-const trades = {};   // `${top}|${h}` -> [{t, r, rn, state, ok}]
+const trades = {};   // `${top}|${h}` -> [{t, r, rs, state, ok}]
 const baseDay = {};  // h -> Map(t -> 當天基本門檻合格股票的平均報酬)
 for (const top of TOPS) for (const h of HOLDS) trades[top + '|' + h] = [];
 for (const h of HOLDS) baseDay[h] = new Map();
@@ -88,49 +88,51 @@ for (let t = WARM; t < T - 1; t++) {
   const state = res.market.state, ok = OK_STATES.has(state);
   stateDays[state] = (stateDays[state] || 0) + 1;
 
-  // 對照組：基本門檻合格的全部股票，持有 h 天、不設停損
+  const picks = res.rows.filter(x => x.ev.pass).sort((a, b) => b.ev.rank - a.ev.rank);
+  if (picks.length) { signalDays++; pickSum += picks.length; }
+  // 對照組：基本門檻合格的全部股票，不設停損
   for (const h of HOLDS) {
     const rs = [];
-    for (const x of res.rows) {
-      if (!(x.ev.chk.liq && x.ev.chk.price && x.ev.chk.safe)) continue;
+    for (const x of picks) {
       const r = sim(x.s.full, t, h, 0);
       if (r !== null) rs.push(r);
     }
     if (rs.length) baseDay[h].set(t, mean(rs));
   }
-
-  const picks = res.rows.filter(x => x.ev.pass && x.ev.entry).sort((a, b) => b.ev.score - a.ev.score);
-  if (picks.length) { signalDays++; pickSum += picks.length; }
   for (const top of TOPS) {
-    const chosen = top === 'all' ? picks : picks.slice(0, top);
-    for (const x of chosen) {
+    for (const x of picks.slice(0, top)) {
       for (const h of HOLDS) {
-        const r = sim(x.s.full, t, h, x.m.stop), rn = sim(x.s.full, t, h, 0);
-        if (r !== null) trades[top + '|' + h].push({ t, r, rn, state, ok });
+        const r = sim(x.s.full, t, h, 0), rs = sim(x.s.full, t, h, x.m.stop);
+        if (r !== null) trades[top + '|' + h].push({ t, r, rs, state, ok });
       }
     }
   }
 }
 
-const mid = Math.floor((WARM + T - 1) / 2);
 const results = {};
 for (const top of TOPS) {
   results[top] = {};
   for (const h of HOLDS) {
-    const all = trades[top + '|' + h], rule = all.filter(x => x.ok);
-    const ruleDays = [...new Set(rule.map(x => x.t))];
-    const baseVals = ruleDays.map(t => baseDay[h].get(t)).filter(v => v !== undefined);
+    const all = trades[top + '|' + h];
+    const bd = baseDay[h];
+    // 每筆減掉「同一天對照組平均」，看選股本身多賺多少
+    const ex = a => a.length ? round2(mean(a.map(x => (x.r - (bd.get(x.t) ?? 0)))) * 100) : null;
+    const days = [...bd.keys()].sort((a, b) => a - b);
+    const cuts = [days[0], days[Math.floor(days.length / 3)], days[Math.floor(days.length * 2 / 3)], Infinity];
+    const part = i => all.filter(x => x.t >= cuts[i] && x.t < cuts[i + 1]);
+    const baseVals = days.map(t => bd.get(t));
     const byState = {};
-    for (const s of ['strong', 'weakening', 'pullback', 'bear']) {
-      const a = all.filter(x => x.state === s).map(x => x.r);
-      byState[s] = a.length ? (({ n, win, avg }) => ({ n, win, avg }))(stats(a)) : { n: 0 };
+    for (const st of ['strong', 'weakening', 'pullback', 'bear']) {
+      const a = all.filter(x => x.state === st);
+      byState[st] = a.length ? { n: a.length, win: stats(a.map(x => x.r)).win, avg: stats(a.map(x => x.r)).avg, excess: ex(a) } : { n: 0 };
     }
+    const okOnly = all.filter(x => x.ok);
     results[top][h] = {
-      rule: stats(rule.map(x => x.r)),
-      first: stats(rule.filter(x => x.t < mid).map(x => x.r)),
-      second: stats(rule.filter(x => x.t >= mid).map(x => x.r)),
-      noFilter: stats(all.map(x => x.r)),
-      noStopAvg: rule.length ? round2(mean(rule.map(x => x.rn)) * 100) : null,
+      rule: stats(all.map(x => x.r)),
+      excess: ex(all),
+      parts: [0, 1, 2].map(i => { const a = part(i); return Object.assign({ excess: ex(a) }, stats(a.map(x => x.r))); }),
+      okOnly: Object.assign({ excess: ex(okOnly) }, stats(okOnly.map(x => x.r))),
+      withStopAvg: all.length ? round2(mean(all.map(x => x.rs)) * 100) : null,
       base: baseVals.length ? round2(mean(baseVals) * 100) : null,
       byState
     };
@@ -142,7 +144,7 @@ const out = {
   range: { from: dates[WARM], to: dates[T - 1], days: evalDays, totalDays: T },
   adjustedExDiv: !!H.adjusted,
   params: { feeDiscount, buyFeePct: round2(BUY_FEE * 100 * 1000) / 1000, taxPct: 0.3, stopDays: DEFAULT_CFG.stopDays,
-            entry: '隔天開盤買進', exit: '持有到期收盤賣出，碰到停損先賣', marketFilter: '月線上方才進場' },
+            entry: '隔天開盤買進', rank: '近 20 日漲幅 + 離 120 日高點的距離', exit: '持有到期收盤賣出，不設停損', marketFilter: '不看大盤' },
   indexReturnPct: round2((mk[T - 1] / mk[WARM] - 1) * 100),
   stateDays, signalDays, avgPicksPerSignalDay: signalDays ? round2(pickSum / signalDays) : 0,
   tops: TOPS, holds: HOLDS, results

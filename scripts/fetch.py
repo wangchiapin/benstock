@@ -5,7 +5,7 @@
   data/raw/YYYY-MM-DD.json.gz   每天的原始行情（沒還原），一天一個檔，只增不改
   data/raw/holidays.json        確認過休市的平日，不用重複去問
   data/exdiv.json               除權息事件（參考價 / 前收盤價 = 還原係數）
-  data/latest.json              給網頁用：最近 100 個交易日，已還原除權息
+  data/latest.json              給網頁用：最近 130 個交易日，已還原除權息
 
 用法：
   python scripts/fetch.py                       每天更新（只補缺的日子）
@@ -34,7 +34,7 @@ LATEST = os.path.join(DATA, "latest.json")
 
 URL_DAY = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={d}&type=ALLBUT0999&response=json"
 URL_EX = "https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate={a}&endDate={b}&response=json"
-KEEP_LATEST = 100  # 網頁用的資料留幾個交易日
+KEEP_LATEST = 130  # 網頁用的資料留幾個交易日
 SLEEP = 5          # 每次請求之間等幾秒（證交所不喜歡抓太快）
 TW = dt.timezone(dt.timedelta(hours=8))
 
