@@ -84,7 +84,7 @@ for (let t = WARM; t < T - 1; t++) {
     list.push({ code: st.code, name: st.name, full: st,
       closes: st.closes.slice(a, b), highs: st.highs.slice(a, b), lows: st.lows.slice(a, b), vols: st.vols.slice(a, b) });
   }
-  const res = runAll({ market: { closes: mk.slice(0, t + 1) }, stocks: list }, DEFAULT_CFG, DEFAULT_ON);
+  const res = runAll({ market: { closes: mk.slice(0, t + 1) }, stocks: list }, DEFAULT_CFG, Object.assign({}, DEFAULT_ON, { div: false }));
   if (!res.market) continue;
   evalDays++;
   const state = res.market.state, ok = OK_STATES.has(state);

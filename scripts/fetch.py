@@ -294,25 +294,47 @@ def r3(a):
     return [round(x, 3) for x in a]
 
 
-def to_latest(days, st, adjusted):
+def div_flags(events, asof):
+    """穩定配息：最近兩個 12 個月，每一段都至少有一次除權息。回傳 {代號: (是否穩定, 最近一次除權息日)}。"""
+    d0 = dt.date.fromisoformat(asof)
+    last, a, b = {}, set(), set()
+    for date, rows in events.items():
+        d = dt.date.fromisoformat(date)
+        k = (d0 - d).days
+        if k <= 0 or k > 730:
+            continue
+        for code in rows:
+            if code not in last or date > last[code]:
+                last[code] = date
+            (a if k <= 365 else b).add(code)
+    return {c: (c in a and c in b, last[c]) for c in last}
+
+
+def to_latest(days, st, adjusted, divs=None):
+    divs = divs or {}
     n = len(days)
     stocks = []
     for code in sorted(st):
         s = st[code]
         if s["e"] != n - 1:  # 最新一天沒成交的不收
             continue
+        d = divs.get(code)
         stocks.append({"code": code, "name": s["name"], "closes": r3(s["c"]), "highs": r3(s["h"]),
-                       "lows": r3(s["l"]), "vols": s["v"]})
+                       "lows": r3(s["l"]), "vols": s["v"], "div": 1 if (d and d[0]) else 0,
+                       "divDate": d[1] if d else None})
     return {"asOf": days[-1][0], "demo": False, "adjusted": adjusted, "dates": [d[0] for d in days],
             "market": {"closes": [round(d[1], 2) for d in days]}, "stocks": stocks}
 
 
-def to_export(days, st, adjusted):
+def to_export(days, st, adjusted, divs=None):
+    divs = divs or {}
     stocks = []
     for code in sorted(st):
         s = st[code]
+        d = divs.get(code)
         stocks.append({"code": code, "name": s["name"], "s": s["s"], "e": s["e"], "opens": r3(s["o"]),
-                       "highs": r3(s["h"]), "lows": r3(s["l"]), "closes": r3(s["c"]), "vols": s["v"]})
+                       "highs": r3(s["h"]), "lows": r3(s["l"]), "closes": r3(s["c"]), "vols": s["v"],
+                       "div": 1 if (d and d[0]) else 0, "divDate": d[1] if d else None})
     return {"adjusted": adjusted, "dates": [d[0] for d in days],
             "market": {"closes": [round(d[1], 2) for d in days]}, "stocks": stocks}
 
@@ -352,7 +374,7 @@ def main(argv=None):
         need = {f"{d[:4]}-{d[5:7]}" for d in dates}
         adjusted = need <= set(ex["months"]) | {today.strftime("%Y-%m")}
         days = [load_raw(d) for d in dates]
-        obj = to_export(days, build_series(days, ex["events"]), adjusted)
+        obj = to_export(days, build_series(days, ex["events"]), adjusted, div_flags(ex["events"], dates[-1]))
         print(f"分割或減資還原：{len(GAP_LOG)} 件")
         with open(a.export, "w", encoding="utf-8") as f:
             json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
@@ -366,7 +388,7 @@ def main(argv=None):
         return 0 if complete else 10
     events, adjusted = update_exdiv(dt.date.fromisoformat(dates[0]), dt.date.fromisoformat(dates[-1]), today)
     days = [load_raw(d) for d in dates[-KEEP_LATEST:]]
-    latest = to_latest(days, build_series(days, events), adjusted)
+    latest = to_latest(days, build_series(days, events), adjusted, div_flags(events, dates[-1]))
     print(f"分割或減資還原：{len(GAP_LOG)} 件")
     if len(latest["stocks"]) < 500:
         raise RuntimeError(f"只有 {len(latest['stocks'])} 檔股票，太少了，不寫入")

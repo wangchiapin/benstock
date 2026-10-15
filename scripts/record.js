@@ -50,7 +50,7 @@ function evalAt(t) {
     const idx = t - st.s;
     if (idx < WARM) continue;
     const a = Math.max(0, idx - WIN + 1), b = idx + 1;
-    list.push({ code: st.code, name: st.name, full: st,
+    list.push({ code: st.code, name: st.name, full: st, div: st.div, divDate: st.divDate,
       closes: st.closes.slice(a, b), highs: st.highs.slice(a, b), lows: st.lows.slice(a, b), vols: st.vols.slice(a, b) });
   }
   return runAll({ market: { closes: mk.slice(0, t + 1) }, stocks: list }, DEFAULT_CFG, DEFAULT_ON);
