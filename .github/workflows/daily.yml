@@ -23,6 +23,9 @@ jobs:
           python-version: "3.12"
       - name: 抓證交所資料
         run: python scripts/fetch.py
+      - name: 抓三大法人買賣超和月營收（實驗用，原本的排名不會用到）
+        continue-on-error: true   # 這步失敗不影響股價資料和往後記錄
+        run: python scripts/fetch_extra.py
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
