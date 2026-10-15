@@ -54,6 +54,7 @@ h1{font-size:22px;line-height:1.25;margin:0;font-weight:700;letter-spacing:.02em
 .market{border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;font-size:14px}
 .market.ok{background:var(--ok-bg);color:var(--ok-ink)}
 .market.bad{background:var(--warn-bg);color:var(--warn-ink)}
+.market.mid{background:var(--chip);color:var(--ink)}
 .market b{font-weight:700}
 .market .num{font-family:var(--mono);font-size:13px}
 .dot{width:10px;height:10px;border-radius:50%;background:currentColor;flex:none}
@@ -267,7 +268,11 @@ function runAll(data,cfg,on){
   const mc=data.market&&data.market.closes;
   if(Array.isArray(mc)&&mc.length>=20){
     const price=mc[mc.length-1],ma20=mean(tail(mc,20));
-    market={price,ma20,ok:price>ma20};
+    const ma20prev=mc.length>=25?mean(tail(mc,20,5)):ma20;
+    const ma60=mc.length>=60?mean(tail(mc,60)):null;
+    const above=price>ma20,up=ma20>=ma20prev;
+    const state=above?(up?'strong':'weakening'):(up?'pullback':'bear');
+    market={price,ma20,ma20prev,ma60,ok:above,up,state,dist20:price/ma20-1,above60:ma60===null?null:price>ma60};
   }
   return {rows:ms,market};
 }
@@ -391,7 +396,15 @@ function buildDemo(){
     const mk=res.market;
     const blocked=!!(state.on.mkt&&mk&&!mk.ok);
     if(mk){
-      $('#market').innerHTML=`<div class="market ${mk.ok?'ok':'bad'}"><span class="dot"></span><div>${mk.ok?'<b>大盤在月線上方</b>，買進訊號啟用':'<b>大盤在月線下方</b>，建議空手或降低部位'}<br><span class="num">指數 ${Math.round(mk.price).toLocaleString('en-US')}　月線 ${Math.round(mk.ma20).toLocaleString('en-US')}</span></div></div>`;
+      const T={
+        strong:['ok','大盤偏強','在月線上方，月線向上。買進訊號啟用。'],
+        weakening:['mid','大盤轉弱中','還在月線上方，但月線已經向下。可以進場，但部位建議縮小。'],
+        pullback:['bad','大盤回檔','跌到月線下方，但月線還在向上。先觀察，看能不能守住季線或回到月線。'],
+        bear:['bad','大盤偏空','在月線下方，月線也向下。建議空手。']
+      }[mk.state];
+      const n0=x=>Math.round(x).toLocaleString('en-US');
+      const q=mk.above60===null?'':'　季線 '+n0(mk.ma60)+'（'+(mk.above60?'站上':'跌破')+'）';
+      $('#market').innerHTML=`<div class="market ${T[0]}"><span class="dot"></span><div><b>${T[1]}</b>　${T[2]}<br><span class="num">指數 ${n0(mk.price)}　月線 ${n0(mk.ma20)}（${pc(mk.dist20)}，${mk.up?'向上':'向下'}）${q}</span></div></div>`;
     }else $('#market').innerHTML='';
     const go=[],watch=[],out=[];
     for(const x of res.rows){
