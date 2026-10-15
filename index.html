@@ -278,7 +278,7 @@ function sharesFor(m,cfg){return Math.floor(cfg.amount/m.price)}   // 零股：�
 // 排名依據：近 20 日漲幅、離 120 日高點的距離，各在「合格股票」裡排百分位，兩個加起來
 function runAll(data,cfg,on){
   const ms=[];
-  for(const s of data.stocks){const m=metrics(s,cfg);if(m)ms.push({s,m})}
+  for(const s of data.stocks){if(s.t)continue;const m=metrics(s,cfg);if(m)ms.push({s,m})}   // t=1：只供自選追蹤（5 位數 ETF），不進排名
   for(const x of ms)x.ev=evaluate(x.m,cfg,on);
   const ok=ms.filter(x=>x.ev.pass),N=ok.length;
   const pr=(key,out)=>{
@@ -524,7 +524,7 @@ function holdStatus(s,dates,h,stopPct){
   function holdHtml(d,ranked,rows){
     const keep=state.holds.length?'':'<div class="empty">還沒有持股。在上面輸入買進的股票，或只是想追蹤的股票（買進價留空，會用你選的日期的收盤價），之後每次更新資料，這裡會告訴你賺賠和該不該賣。</div>';
     const form=`<div class="hform">
-      <div class="row"><label for="hCode">股票代號<input id="hCode" inputmode="numeric" maxlength="6" placeholder="例如 2330"></label>
+      <div class="row"><label for="hCode">股票代號<input id="hCode" maxlength="6" autocapitalize="characters" placeholder="2330 或 00878"></label>
       <label for="hPrice">買進價（留空＝當天收盤價）<input id="hPrice" type="number" inputmode="decimal" step="0.01" min="0"></label></div>
       <div class="row"><label for="hDate">買進日期<input id="hDate" type="date" value="${esc(d.asOf||'')}"></label>
       <label for="hLots">股數（選填）<input id="hLots" type="number" inputmode="numeric" min="0" step="1"></label></div>
@@ -542,7 +542,7 @@ function holdStatus(s,dates,h,stopPct){
         rk=row.ev.pass?`<div class="sub">現在排名第 ${pos+1} / ${ranked.length} 名${pos<state.cfg.topN?'（在前 '+Math.round(state.cfg.topN)+' 名內）':''}</div>`:`<div class="sub">目前不在名單：${esc(row.ev.reasons.join('、'))}</div>`;
         if(row.m.div===1)rk+=`<div class="sub">穩定配息${row.m.divDate?'，最近除息 '+esc(row.m.divDate):''}</div>`;}
       const al=st.alerts.length?st.alerts.map(t=>`<div class="alert ${st.level==='ok'?'ok':st.level}">${t}</div>`).join(''):'<div class="alert ok">沒有賣出訊號，可以續抱。</div>';
-      return `<div class="hcard"><div class="top2"><span><b>${esc(s.name)}</b> <span class="cd">${esc(h.code)}</span></span><span class="pl ${cls}">${pc(st.netPl)}</span></div>
+      return `<div class="hcard"><div class="top2"><span><b>${esc(s.name)}</b> <span class="cd">${esc(h.code)}${/^00/.test(h.code)?" · ETF":""}</span></span><span class="pl ${cls}">${pc(st.netPl)}</span></div>
         <div class="sub">${h.auto?'參考價':'買'} ${f2(h.price)}（${esc(h.date)}）→ 現價 ${f2(st.price)}，已扣手續費和稅${lot}</div>
         <div class="sub">已持有 ${st.held} 個交易日　20 日線 ${f2(st.ma20)}（${pc(st.dist20)}）　高點回落 ${(st.dd*100).toFixed(1)}%</div>
         ${rk}${al}<button class="del" data-del="${i}" type="button">刪除</button></div>`;
@@ -610,7 +610,7 @@ function holdStatus(s,dates,h,stopPct){
       const shown=state.tab==='out'?cur.slice(0,40):cur;
       $('#list').innerHTML=`<div class="cards">${shown.map(x=>card(x,state.tab,false)).join('')}</div>`+(shown.length<cur.length?`<p class="foot">只顯示成交金額最大的 ${shown.length} 檔，共 ${cur.length} 檔。</p>`:'');
     }
-    const skipped=d.stocks.length-res.rows.length;
+    const skipped=d.stocks.filter(x=>!x.t).length-res.rows.length;
     if(skipped>0)msg(`有 ${skipped} 檔資料不足 125 日，已略過。`);
   }
   function loadFw(){
@@ -638,10 +638,10 @@ function holdStatus(s,dates,h,stopPct){
     if(chip&&chip.dataset.bt){if(chip.dataset.bt==='view')state.btView=chip.dataset.v;else if(chip.dataset.bt==='top')state.btTop=chip.dataset.v;else state.btHold=chip.dataset.v;save();render();return}
     if(chip){const k=chip.dataset.k;state.on[k]=!state.on[k];chip.setAttribute('aria-pressed',String(state.on[k]));save();render();return}
     if(e.target.closest('#addHold')){
-      const code=$('#hCode').value.trim(),date=$('#hDate').value,shares=parseFloat($('#hLots').value)||0;
+      const code=$('#hCode').value.trim().toUpperCase(),date=$('#hDate').value,shares=parseFloat($('#hLots').value)||0;
       let price=parseFloat($('#hPrice').value),auto=false;
       const hm=$('#hMsg');
-      if(!/^\d{4}$/.test(code)){hm.textContent='請輸入 4 位數的股票代號。';return}
+      if(!/^(\d{4}|00\d{3}[A-Z]?)$/.test(code)){hm.textContent='請輸入股票代號（4 位數），或 ETF 代號（例如 00878）。';return}
       if(!date){hm.textContent='請選日期。';return}
       if(!(price>0)){
         const st=state.data.stocks.find(x=>x.code===code);

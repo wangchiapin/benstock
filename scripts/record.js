@@ -46,7 +46,7 @@ const byCode = new Map(stocks.map(s => [s.code, s]));
 function evalAt(t) {
   const list = [];
   for (const st of stocks) {
-    if (st.s > t || st.e < t) continue;
+    if (st.t || st.s > t || st.e < t) continue;   // t=1：只供自選追蹤的 ETF，不進排名
     const idx = t - st.s;
     if (idx < WARM) continue;
     const a = Math.max(0, idx - WIN + 1), b = idx + 1;

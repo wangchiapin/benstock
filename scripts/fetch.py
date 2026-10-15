@@ -34,6 +34,8 @@ LATEST = os.path.join(DATA, "latest.json")
 
 URL_DAY = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={d}&type=ALLBUT0999&response=json"
 URL_EX = "https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate={a}&endDate={b}&response=json"
+CODE_OK = re.compile(r"\d{4}|00\d{3}[A-Z]?")   # 4 位數的股票和早期 ETF，加上 5 位數代號的 ETF（例如 00878、00981A）
+RAW_VER = 2        # 原始檔版本：2 = 有收 5 位數 ETF
 GAP_ADJ = 0.12     # 開盤價和前一天收盤價差超過這個比例，就當作分割或減資來還原
 GAP_LOG = []       # 這次還原了哪些事件（代號、日期、倍率）
 KEEP_LATEST = 130  # 網頁用的資料留幾個交易日
@@ -73,7 +75,7 @@ def parse_day(js):
             ix = {f: i for i, f in enumerate(fields)}
             for r in data:
                 code = str(r[ix["證券代號"]]).strip()
-                if not re.fullmatch(r"\d{4}", code):
+                if not CODE_OK.fullmatch(code):
                     continue
                 c = num(r[ix["收盤價"]])
                 if c is None or c <= 0:  # 當天沒成交
@@ -118,7 +120,7 @@ def parse_exdiv(js):
             continue
         date = dt.date(int(m.group(1)) + 1911, int(m.group(2)), int(m.group(3))).isoformat()
         code = str(r[1]).strip()
-        if not re.fullmatch(r"\d{4}", code):
+        if not CODE_OK.fullmatch(code):
             continue
         prev, ref = num(r[i_prev]), num(r[i_ref])
         if not prev or not ref:
@@ -149,7 +151,12 @@ def raw_dates():
 def save_raw(date_str, idx, stocks):
     os.makedirs(RAW, exist_ok=True)
     with gzip.open(os.path.join(RAW, date_str + ".json.gz"), "wt", encoding="utf-8") as f:
-        json.dump({"date": date_str, "index": idx, "stocks": stocks}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"date": date_str, "v": RAW_VER, "index": idx, "stocks": stocks}, f, ensure_ascii=False, separators=(",", ":"))
+
+
+def raw_version(date_str):
+    with gzip.open(os.path.join(RAW, date_str + ".json.gz"), "rt", encoding="utf-8") as f:
+        return json.load(f).get("v", 1)
 
 
 def load_raw(date_str):
@@ -218,6 +225,31 @@ def ensure_raw(target_days, max_new, today):
                     save_holidays(holi)
                 time.sleep(SLEEP)
         d -= dt.timedelta(days=1)
+    return True
+
+
+def refill_etf(dates, budget):
+    """舊的原始檔只收 4 位數代號。把最近這些天重抓一次，補上 5 位數 ETF（已經補過的會跳過）。
+    從最近的一天往回補，每次最多 budget 個請求；被擋就先停，下次再接著補。回傳是否全部補完。"""
+    n = 0
+    for ds in reversed(dates):
+        if raw_version(ds) >= RAW_VER:
+            continue
+        if n >= budget:
+            return False
+        try:
+            r = fetch_day(dt.date.fromisoformat(ds))
+        except RuntimeError as e:
+            print(f"  補 ETF 資料中斷：{e}")
+            return False
+        n += 1
+        if r:
+            save_raw(ds, r[0], r[1])
+            print(f"  {ds} 補上 ETF（{n}）", flush=True)
+        else:   # 證交所說這天沒資料：只更新版本，避免每次都重抓
+            d0, i0, s0 = load_raw(ds)
+            save_raw(ds, i0, s0)
+        time.sleep(SLEEP)
     return True
 
 
@@ -319,9 +351,12 @@ def to_latest(days, st, adjusted, divs=None):
         if s["e"] != n - 1:  # 最新一天沒成交的不收
             continue
         d = divs.get(code)
-        stocks.append({"code": code, "name": s["name"], "closes": r3(s["c"]), "highs": r3(s["h"]),
-                       "lows": r3(s["l"]), "vols": s["v"], "div": 1 if (d and d[0]) else 0,
-                       "divDate": d[1] if d else None})
+        x = {"code": code, "name": s["name"], "closes": r3(s["c"]), "highs": r3(s["h"]),
+             "lows": r3(s["l"]), "vols": s["v"], "div": 1 if (d and d[0]) else 0,
+             "divDate": d[1] if d else None}
+        if not re.fullmatch(r"\d{4}", code):
+            x["t"] = 1   # 只供自選追蹤，不進排名
+        stocks.append(x)
     return {"asOf": days[-1][0], "demo": False, "adjusted": adjusted, "dates": [d[0] for d in days],
             "market": {"closes": [round(d[1], 2) for d in days]}, "stocks": stocks}
 
@@ -332,9 +367,12 @@ def to_export(days, st, adjusted, divs=None):
     for code in sorted(st):
         s = st[code]
         d = divs.get(code)
-        stocks.append({"code": code, "name": s["name"], "s": s["s"], "e": s["e"], "opens": r3(s["o"]),
-                       "highs": r3(s["h"]), "lows": r3(s["l"]), "closes": r3(s["c"]), "vols": s["v"],
-                       "div": 1 if (d and d[0]) else 0, "divDate": d[1] if d else None})
+        x = {"code": code, "name": s["name"], "s": s["s"], "e": s["e"], "opens": r3(s["o"]),
+             "highs": r3(s["h"]), "lows": r3(s["l"]), "closes": r3(s["c"]), "vols": s["v"],
+             "div": 1 if (d and d[0]) else 0, "divDate": d[1] if d else None}
+        if not re.fullmatch(r"\d{4}", code):
+            x["t"] = 1
+        stocks.append(x)
     return {"adjusted": adjusted, "dates": [d[0] for d in days],
             "market": {"closes": [round(d[1], 2) for d in days]}, "stocks": stocks}
 
@@ -386,6 +424,7 @@ def main(argv=None):
     if not dates:
         print("沒有任何資料（證交所還沒公布，或被擋）")
         return 0 if complete else 10
+    refill_etf(dates[-KEEP_LATEST:], 150)
     events, adjusted = update_exdiv(dt.date.fromisoformat(dates[0]), dt.date.fromisoformat(dates[-1]), today)
     days = [load_raw(d) for d in dates[-KEEP_LATEST:]]
     latest = to_latest(days, build_series(days, events), adjusted, div_flags(events, dates[-1]))
