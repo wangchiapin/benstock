@@ -1,0 +1,83 @@
+name: 實驗回測（營收、法人）
+
+# 只測試，不改網頁。結果存在 data/backtest-exp.json
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 往回測幾年（第一次補三大法人資料約需 1 到 1.5 小時）
+        default: "3"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-fetch          # 跟每日更新、回測共用，避免同時寫資料
+  cancel-in-progress: false
+
+jobs:
+  backtest-exp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 分批補抓三大法人（每批存一次，中斷了下次接著抓）
+        env:
+          YEARS: ${{ inputs.years }}
+        run: |
+          DAYS=$(python3 -c "import os; print(int(float(os.environ['YEARS']) * 250))")
+          echo "目標：最近 $DAYS 個交易日"
+          for i in 1 2 3 4 5 6 7 8; do
+            set +e
+            python scripts/fetch_extra.py --no-revenue --days "$DAYS" --max-new 150
+            rc=$?
+            set -e
+            git add data
+            if ! git diff --cached --quiet; then
+              git commit -m "補抓三大法人（第 $i 批）"
+              git push
+            fi
+            if [ "$rc" -eq 0 ]; then break; fi
+            if [ "$rc" -ne 10 ]; then exit "$rc"; fi
+          done
+
+      - name: 補抓過去的月營收（公開資訊觀測站）
+        continue-on-error: true   # 抓不到的話，回測照跑，只是營收那幾組沒有資料
+        env:
+          YEARS: ${{ inputs.years }}
+        run: |
+          MONTHS=$(python3 -c "import os; print(int(float(os.environ['YEARS']) * 12) + 7)")
+          python scripts/fetch_extra.py --no-inst --no-revenue --revenue-history "$MONTHS"
+          git add data
+          if ! git diff --cached --quiet; then
+            git commit -m "補抓過去月營收"
+            git push
+          fi
+
+      - name: 實驗回測
+        env:
+          YEARS: ${{ inputs.years }}
+        run: |
+          KEEP=$(python3 -c "import os; print(int(float(os.environ['YEARS']) * 250) + 20)")
+          python scripts/fetch.py --export "$RUNNER_TEMP/history.json" --keep "$KEEP"
+          node scripts/backtest_exp.js "$RUNNER_TEMP/history.json" index.html data data/backtest-exp.json
+
+      - name: 把結果存回 repo
+        run: |
+          git add data/backtest-exp.json
+          if git diff --cached --quiet; then
+            echo "沒有變動"
+          else
+            git commit -m "更新實驗回測成績 $(date -u +%F)"
+            git push
+          fi

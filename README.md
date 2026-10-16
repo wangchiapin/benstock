@@ -10,6 +10,7 @@
   - 除權息資料存在 `data/exdiv.json`，用來把歷史股價還原（除息那天的下跌不是真的跌）。
   - 再產生給網頁用的 `data/latest.json`（最近 130 個交易日，已還原）。
 - `scripts/fetch_extra.py`：實驗用，每天抓三大法人買賣超（`data/inst/日期.json.gz`）和月營收（`data/revenue.json`，記下第一次看到的日期，避免回測偷看未來）。目前網頁和排名都沒有用到。
+- `scripts/backtest_exp.js`、`.github/workflows/backtest-exp.yml`：實驗回測（手動執行）。在現行排名加上月營收年增率、三大法人買賣超，比較 5 種組合，結果存成 `data/backtest-exp.json`。網頁不讀這個檔。
 - `scripts/backtest.js`：用網頁同一套篩選規則，逐日回測，結果存成 `data/backtest.json`。
 - `scripts/record.js`：往後記錄。每天把排名前 10 檔記進 `data/forward.json`（記下就不改），之後自動算買進後的實際賺賠。
 - `.github/workflows/daily.yml`：台灣時間週一到週五 16:00 自動更新資料，並記錄當天排名。

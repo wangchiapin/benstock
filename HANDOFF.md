@@ -28,6 +28,7 @@
 | `index.html` | 整個網頁。`//<core>…//</core>` 之間是核心邏輯，Node 腳本也會讀取它 |
 | `scripts/fetch.py` | 抓證交所資料、除權息還原、分割/減資自動還原，輸出 `data/latest.json` |
 | `scripts/fetch_extra.py` | 實驗用：三大法人 → `data/inst/日期.json.gz`；月營收 → `data/revenue.json`（含第一次看到的日期）。daily 裡設成失敗不影響主流程 |
+| `scripts/backtest_exp.js` | 實驗回測：原版 / +營收 / +法人 / 兩個都加 / 只當過濾，共 5 組 → `data/backtest-exp.json`。由 `backtest-exp.yml` 手動觸發，會先補 3 年法人和過去月營收（`data/revenue_hist.json`） |
 | `scripts/backtest.js` | 歷史回測 → `data/backtest.json` |
 | `scripts/record.js` | 往後記錄 → `data/forward.json` |
 | `.github/workflows/daily.yml` | 每天自動跑：抓資料 → 記錄 → commit `data` |
@@ -62,7 +63,7 @@
   3. 有問題把 Actions 的 log 給接手的人
 
 ## 8. 待辦與想法
-- 實驗版計畫（Ben 已同意的順序）：① 每天抓存法人和營收（已做）→ ② 回測決定怎麼加 → ③ 規則定案後，另開 `exp.html` 和 `data/forward-exp.json` 做實驗版往後記錄，原本的 `index.html` 不動
+- 實驗版計畫（Ben 已同意的順序）：① 每天抓存法人和營收（已做）→ ② 回測決定怎麼加（程式已寫，等跑出結果）。事先定好的過關標準：前 10 檔持有 20 天，比原版每筆多 0.5 個百分點以上，且前中後三段都較好；也看 2026 年 6～9 月 → ③ 規則定案後，另開 `exp.html` 和 `data/forward-exp.json` 做實驗版往後記錄，原本的 `index.html` 不動
 - 月營收的 openapi 只有最新一個月；回測要的歷史月營收要另外從公開資訊觀測站補，且只能假設「次月 10 日後」才算已公布
 - 等待往後記錄累積，不急著改排名
 - 候選實驗（先回測、不改網頁）：月營收年增率、三大法人買賣超；本益比/淨值比/殖利率只當「太貴就不買」的過濾
