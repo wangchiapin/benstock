@@ -34,6 +34,13 @@ jobs:
         run: |
           python scripts/fetch.py --export "$RUNNER_TEMP/history.json" --keep 200
           node scripts/record.js "$RUNNER_TEMP/history.json" index.html data/forward.json
+      - name: 實驗版往後記錄（排除營收衰退或法人賣超，結果給 exp.html 看）
+        continue-on-error: true   # 這步失敗不影響原版記錄和股價資料
+        run: |
+          if [ ! -f "$RUNNER_TEMP/history.json" ]; then
+            python scripts/fetch.py --export "$RUNNER_TEMP/history.json" --keep 200
+          fi
+          node scripts/record_exp.js "$RUNNER_TEMP/history.json" index.html data data/forward-exp.json
       - name: 有變動就存回 repo
         if: always()         # 就算中途失敗，已經抓到的也先存起來
         run: |

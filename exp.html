@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>實驗版選股</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* 實驗版往後記錄：跟原版（index.html）並排比較。顏色和字型跟原版一樣，台股慣例紅漲綠跌。 */
+:root{
+  --bg:#F2F4F7; --surface:#FFFFFF; --ink:#16202E; --muted:#5E6B7C; --line:#DDE2EA;
+  --accent:#2D4E8F; --chip:#E8EDF5; --exp:#7A4FB5; --exp-bg:#F1EAFB;
+  --up:#D2373A; --down:#17935F;
+  --warn-bg:#FFF3D6; --warn-ink:#7A5200;
+  --font:"Noto Sans TC",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F131A; --surface:#171C25; --ink:#E7EBF2; --muted:#9AA6B8; --line:#28303D;
+    --accent:#8CAEF0; --chip:#212938; --exp:#C3A2F2; --exp-bg:#2A2140;
+    --up:#FF6B6B; --down:#45C48F;
+    --warn-bg:#3A2F12; --warn-ink:#F0CF8A;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F131A; --surface:#171C25; --ink:#E7EBF2; --muted:#9AA6B8; --line:#28303D;
+  --accent:#8CAEF0; --chip:#212938; --exp:#C3A2F2; --exp-bg:#2A2140;
+  --up:#FF6B6B; --down:#45C48F;
+  --warn-bg:#3A2F12; --warn-ink:#F0CF8A;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--bg); color:var(--ink); font-family:var(--font); font-size:15px; line-height:1.55;
+  padding-block:16px 40px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap{max-width:760px;margin:0 auto;display:grid;gap:14px;min-width:0}
+h1{font-size:22px;line-height:1.25;margin:0;font-weight:700;letter-spacing:.02em}
+h2{font-size:16px;margin:8px 0 0;font-weight:700}
+.meta{margin:4px 0 0;color:var(--muted);font-size:13px}
+.meta a{color:var(--accent)}
+.notice{background:var(--warn-bg);color:var(--warn-ink);border-radius:10px;padding:10px 14px;font-size:14px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}
+.rule{font-size:14px}
+.rule b{color:var(--exp)}
+.sub{font-size:13px;color:var(--muted)}
+.up{color:var(--up)} .dn{color:var(--down)}
+.num{font-family:var(--mono);white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12.5px;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.cmp th:nth-child(3),.cmp td:nth-child(3){color:var(--exp)}
+.cmp td:nth-child(3).up{color:var(--up)} .cmp td:nth-child(3).dn{color:var(--down)}
+.tag{display:inline-block;font-size:11.5px;border-radius:6px;padding:0 6px;margin-left:4px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.tag.new{background:var(--exp-bg);color:var(--exp)}
+.cd{font-family:var(--mono);font-size:12px;color:var(--muted)}
+details.day{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-width:0}
+details.day>summary{list-style:none;cursor:pointer;padding:12px 16px;display:grid;grid-template-columns:1fr auto auto;gap:4px 14px;align-items:baseline}
+details.day>summary::-webkit-details-marker{display:none}
+details.day>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:14px}
+details.day .in{padding:0 16px 14px;display:grid;gap:10px;min-width:0;overflow-x:auto}
+.lbl{font-size:11.5px;color:var(--muted);display:block}
+.empty{color:var(--muted);text-align:center;padding:24px 0}
+.note{font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>實驗版選股</h1>
+    <p class="meta"><span id="asof">讀取中…</span> ・ <a href="./">回原版</a></p>
+  </header>
+  <div class="box rule">
+    <b>實驗規則</b>：用原版排名，但<b>排除</b>「最新月營收比去年同月少」或「近 20 天三大法人賣超」的股票，取前 10 檔。
+    <div class="sub">回測時這組比原版每筆多賺約 0.5 個百分點，剛好過關、幅度很小，換一段時間可能就消失。這裡是從 10/15 起的真實記錄，用來確認它是不是真的有用。</div>
+  </div>
+  <div class="notice" id="warn" hidden></div>
+  <div id="main"><div class="empty">讀取中…</div></div>
+  <p class="note" id="foot"></p>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fp=(x,d)=>(x===null||x===undefined||isNaN(x))?'—':(x>0?'+':'')+x.toFixed(d===undefined?2:d)+'%';
+const ud=x=>x>0?'up':(x<0?'dn':'');
+const STATE={strong:'大盤：月線上、向上',weakening:'大盤：月線上、向下',pullback:'大盤：月線下、向上',bear:'大盤：月線下、向下'};
+const get=u=>fetch(u,{cache:'no-cache'}).then(r=>r.ok?r.json():null).catch(()=>null);
+
+function cmpTable(o,e){
+  const row=(h,lab,f)=>{const a=(o.summary||{})[h]||{},b=(e.summary||{})[h]||{};
+    return `<tr><td>${lab}</td><td class="r num ${f.cls?ud(f.v(a)):''}">${a.n?f.s(a):'—'}</td><td class="r num ${f.cls?ud(f.v(b)):''}">${b.n?f.s(b):'—'}</td></tr>`};
+  const F={
+    avg:{cls:1,v:x=>x.avg,s:x=>fp(x.avg)},
+    ex:{cls:1,v:x=>x.excess,s:x=>fp(x.excess)},
+    win:{s:x=>x.win+'%'},
+    n:{s:x=>x.n+' 筆／'+x.days+' 天'}
+  };
+  const block=h=>`<tr><th colspan="3">持有 ${h} 個交易日（已扣手續費和證交稅）</th></tr>`+
+    row(h,'每筆平均',F.avg)+row(h,'比對照組多賺',F.ex)+row(h,'勝率',F.win)+row(h,'樣本',F.n);
+  return `<div class="box"><table class="cmp"><thead><tr><th></th><th class="r">原版</th><th class="r">實驗版</th></tr></thead>
+    <tbody>${block(20)}${block(10)}</tbody></table>
+    <div class="sub">只算已經持有滿天數的記錄。「比對照組多賺」是兩邊各自跟同一天基本門檻合格的全部股票比，最值得看這一行。</div></div>`;
+}
+
+function dayRow(d,od){
+  const orig=new Set(((od&&od.items)||[]).map(x=>x.code));
+  const tag=d.avail>=20?'已滿 20 天':(d.avail>=1?'持有 '+d.avail+' 天':'明天開盤買');
+  const rows=d.items.map(x=>{
+    const v=x.status==='done'?x.r20:x.sofar;
+    const res=x.status==='wait'?'<span class="sub">明天開盤買</span>':x.status==='unfilled'?'<span class="sub">沒買到</span>'
+      :`<span class="${ud(v)}">${fp(v)}</span>`;
+    const t=od?(orig.has(x.code)?'<span class="tag">原版也有</span>':'<span class="tag new">只有實驗版</span>'):'';
+    return `<tr><td class="num">${x.rank}</td><td>${esc(x.name)} <span class="cd">${esc(x.code)}</span>${t}
+      <div class="sub">營收年增 ${fp(x.rev,1)} ・ 法人 ${fp(x.inst,1)}</div></td><td class="r num">${res}</td></tr>`}).join('');
+  const sk=(d.skipped||[]).map(x=>`<tr><td class="num">${x.orig}</td><td>${esc(x.name)} <span class="cd">${esc(x.code)}</span>
+      <div class="sub">營收年增 ${fp(x.rev,1)} ・ 法人 ${fp(x.inst,1)}</div></td><td class="r">${esc(x.why.join('、'))}</td></tr>`).join('');
+  const oAvg=od?od.sofarAvg:null, bs=d.base&&d.base.sofar!=null?d.base.sofar:null;
+  return `<details class="day"${d.avail<1?' open':''}><summary>
+      <div><b>${esc(d.date)}</b> <span class="sub">${tag}</span><div class="sub">${esc(STATE[d.state]||'')}</div></div>
+      <div class="r"><span class="lbl">實驗版</span><span class="num ${ud(d.sofarAvg)}">${fp(d.sofarAvg)}</span></div>
+      <div class="r"><span class="lbl">原版${bs!==null?'／對照':''}</span><span class="num ${ud(oAvg)}">${fp(oAvg)}</span>${bs!==null?`<span class="num sub">／${fp(bs)}</span>`:''}</div>
+    </summary><div class="in">
+      <table><thead><tr><th>名次</th><th>股票</th><th class="r">${d.avail>=20?'20 天後':'目前'}</th></tr></thead><tbody>${rows}</tbody></table>
+      ${sk?`<div><b style="font-size:14px">被排除的</b><span class="sub">（左邊數字是不排除時的名次）</span>
+      <table><tbody>${sk}</tbody></table></div>`:''}
+    </div></details>`;
+}
+
+Promise.all([get('data/forward-exp.json'),get('data/forward.json')]).then(([e,o])=>{
+  if(!e||!e.days||!e.days.length){$('asof').textContent='還沒有記錄';$('main').innerHTML='<div class="empty">實驗版還沒有記錄。每天收盤後自動執行一次就會開始。</div>';return}
+  o=o||{days:[]};
+  $('asof').textContent='資料到 '+e.lastDate+'，從 '+(e.startDate||e.days[0].date)+' 開始記錄';
+  const n20=((e.summary||{})[20]||{}).days||0;
+  if(n20<30){$('warn').hidden=false;$('warn').textContent=`滿 20 天的記錄只有 ${n20} 天，數字還會跳很大，先別下結論。至少累積 30 個交易日再看（大約 12 月底）。`}
+  const oBy=new Map((o.days||[]).map(d=>[d.date,d]));
+  const days=[...e.days].reverse();
+  $('main').innerHTML=`<div style="display:grid;gap:14px">${cmpTable(o,e)}
+    <h2>每天的名單</h2><div class="sub" style="margin-top:-8px">點開看每一檔。右邊是那一天的名單到目前為止的平均賺賠。</div>
+    ${days.map(d=>dayRow(d,oBy.get(d.date))).join('')}</div>`;
+  $('foot').textContent='兩邊還有一個差別：原版有開「穩定配息」篩選，實驗版沒開（跟回測一樣）。回測顯示這個篩選影響很小。'+
+    ' 每天收盤後記下名單就不再改，隔天開盤買，漲停或停牌標「沒買到」。同一檔股票連續幾天入選會重複計算，實際獨立的樣本比筆數少。這只是記錄，不保證獲利，也不構成投資建議。';
+});
+</script>
+</body>
+</html>
