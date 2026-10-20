@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 朱家泓規則（簡化版）回測。規格見 HANDOFF.md 第 7.1 節。只測試，不改網頁。
-// 用法：node scripts/backtest_zhu.js 歷史檔.json index.html 輸出.json [--fee-discount 1]
+// 用法：node scripts/backtest_zhu.js 歷史檔.json index.html 輸出.json [--fee-discount 1] [--stop 0.05]
 //
 // 選股（每天收盤後）：
 //   1. 基本門檻同原版（成交金額、股價、資料正常），不開穩定配息、不排除暴衝
@@ -19,7 +19,8 @@
 // 過關標準（看結果前定好）：每筆比對照組多賺 ≥ 0.5 個百分點，且前、中、後三段都 > 0
 const fs = require('fs');
 
-const STOP = 0.05, MAXHOLD = 20, TOP = 10;
+let STOP = 0.05;   // 停損幅度，預設 5%，可用 --stop 0.08 改
+const MAXHOLD = 20, TOP = 10;
 const WARM = 125, WIN = 130, TREND_LOOK = 60, SW = 3, GOAL = 0.5;
 const BUY_FEE0 = 0.001425, SELL_FEE0 = 0.001425, TAX = 0.003;
 
@@ -173,7 +174,9 @@ function main() {
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === '--fee-discount') fd = parseFloat(rest[++i]);
     else if (rest[i] === '--dump-trades') dumpPath = rest[++i];   // 除錯用：把每筆交易存成檔案
+    else if (rest[i] === '--stop') STOP = parseFloat(rest[++i]);   // 停損幅度，例如 0.08 = 買進價往下 8%
   }
+  if (!(STOP > 0 && STOP < 1)) { console.error('--stop 要在 0 到 1 之間'); process.exit(2); }
   if (!(fd > 0 && fd <= 1)) { console.error('--fee-discount 要在 0 到 1 之間'); process.exit(2); }
   const net = makeNet(fd);
 
@@ -258,7 +261,7 @@ function main() {
     range: { from: dates[WARM], to: dates[T - 1], days: evalDays, totalDays: T },
     adjustedExDiv: !!H.adjusted,
     params: { feeDiscount: fd, stopPct: STOP * 100, maxHold: MAXHOLD, top: TOP, taxPct: 0.3,
-      entry: '隔天開盤買進（漲停、停牌買不到）', exit: '停損 −5%；收盤跌破 5 日線隔天開盤賣；最長 20 天收盤賣',
+      entry: '隔天開盤買進（漲停、停牌買不到）', exit: `停損 −${round2(STOP * 100)}%；收盤跌破 5 日線隔天開盤賣；最長 20 天收盤賣`,
       control: '同一天買、同一時間賣的基本門檻合格股票平均', stableDividend: '不開', heldRule: '持有中的同一檔不重複買',
       holdDaysNote: '持有天數從買進當天算起，到賣出那天' },
     signalDays, avgPicksPerSignalDay: signalDays ? round2(pickSum / signalDays) : 0,
