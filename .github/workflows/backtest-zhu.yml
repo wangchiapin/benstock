@@ -1,0 +1,49 @@
+name: 朱家泓規則回測
+
+# 只測試，不改網頁。用 repo 裡已有的歷史資料，不需要重新抓。結果存在 data/backtest-zhu.json
+on:
+  workflow_dispatch:
+    inputs:
+      fee_discount:
+        description: 手續費折扣（1 = 不打折，0.6 = 六折）
+        default: "1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-fetch          # 跟每日更新、其他回測共用，避免同時寫資料
+  cancel-in-progress: false
+
+jobs:
+  backtest-zhu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 匯出歷史資料並回測
+        env:
+          FEE: ${{ inputs.fee_discount }}
+        run: |
+          python scripts/fetch.py --export "$RUNNER_TEMP/history.json" --keep 770
+          node scripts/backtest_zhu.js "$RUNNER_TEMP/history.json" index.html data/backtest-zhu.json --fee-discount "$FEE"
+
+      - name: 把回測成績存回 repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/backtest-zhu.json
+          if git diff --cached --quiet; then
+            echo "沒有變動"
+          else
+            git commit -m "更新朱家泓規則回測成績 $(date -u +%F)"
+            git pull --rebase
+            git push
+          fi
