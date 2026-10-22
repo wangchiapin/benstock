@@ -1,0 +1,53 @@
+name: 補抓本益比與融資（實驗回測用）
+
+# 只補資料，不改網頁、不碰每日更新。資料存在 data/val、data/margin、data/industry.json
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 往回補幾年（第一次約需 2 到 3 小時；中斷了再按一次會接著補）
+        default: "3"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-fetch          # 跟每日更新、回測共用，避免同時寫資料
+  cancel-in-progress: false
+
+jobs:
+  fetch-val:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 單元測試
+        run: python scripts/test_fetch_val.py
+
+      - name: 分批補抓（每批存一次，中斷了下次接著抓）
+        env:
+          YEARS: ${{ inputs.years }}
+        run: |
+          DAYS=$(python3 -c "import os; print(int(float(os.environ['YEARS']) * 250))")
+          echo "目標：最近 $DAYS 個交易日"
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            set +e
+            python scripts/fetch_val.py --days "$DAYS" --max-new 200
+            rc=$?
+            set -e
+            git add data
+            if ! git diff --cached --quiet; then
+              git commit -m "補抓本益比與融資（第 $i 批）"
+              git pull --rebase
+              git push
+            fi
+            if [ "$rc" -eq 0 ]; then break; fi
+            if [ "$rc" -ne 10 ]; then exit "$rc"; fi
+          done
