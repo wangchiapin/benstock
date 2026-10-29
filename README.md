@@ -14,6 +14,7 @@
 - `scripts/fetch_val.py`、`.github/workflows/fetch-val.yml`：實驗用，手動執行（不在每日更新裡）。補抓本益比／淨值比／殖利率（`data/val/`）、融資餘額（`data/margin/`）和產業分類（`data/industry.json`），分批補、中斷可接著補。網頁和排名都沒有用到。`scripts/test_fetch_val.py` 是它的測試。
 - `scripts/backtest_exp2.js`：多組合比較回測（A～F 組），結果存成 `data/backtest-exp2.json`，網頁不讀。`scripts/test_exp2.js` 是它的測試。
 - `scripts/backtest_zhu.js`、`.github/workflows/backtest-zhu.yml`：朱家泓規則（簡化版）回測（手動執行），結果存成 `data/backtest-zhu.json`。`scripts/test_zhu.js` 是它的測試。
+- `scripts/backtest_lin.js`、`scripts/backtest_zhu_check.js`、`scripts/backtest_g.js`（各有對應的 `test_*.js`）：林恩如 20 週均線、朱家泓對照組偏差檢查、組合 G 的回測，結果存成 `data/backtest-lin.json`、`data/backtest-zhu-check.json`、`data/backtest-g.json`，網頁不讀。
 - `scripts/record_exp.js`、`exp.html`：實驗版往後記錄。原版排名但排除營收衰退或法人賣超的股票，每天記前 10 檔到 `data/forward-exp.json`，`exp.html` 和原版並排比較。
 - `scripts/backtest.js`：用網頁同一套篩選規則，逐日回測，結果存成 `data/backtest.json`。
 - `scripts/record.js`：往後記錄。每天把排名前 10 檔記進 `data/forward.json`（記下就不改），之後自動算買進後的實際賺賠。
@@ -53,6 +54,9 @@ ETF：早期發行、代號是 4 位數的 ETF（0050、0056 等 8 檔）跟個�
 - 「排除營收衰退或法人賣超」（2026-10-16 的實驗）：前 10 檔持有 20 天，比原版每筆多賺約 +0.51 個百分點，只比過關門檻 0.5 多 0.01，所以只當候選，從 2026-10-15 開始做實驗版往後記錄（`exp.html`）。
 - 朱家泓規則（簡化版，2026-10-20）：**沒過關**。停損 −5% 和 −8% 都試過，每筆比對照組多賺只有 +0.22% 和 +0.17%（門檻 0.5），目前擱置。
 - 多組合比較（C～F 組，2026-10-23）：C 本益比或淨值比太貴不選、D 融資暴增不選、E 只選強勢產業、F 太不穩的不選，**全部沒過關**，所以沒有新的往後記錄。
+- 林恩如 20 週均線規則（簡化版，2026-10-29）：**沒過關**。表面多賺 +2.64%，但雜訊尺（隨機買、同樣出場規則）就有 +2.17%，固定持有 20 天只有 −0.59%，看不出選股價值。
+- 朱家泓對照組偏差檢查（2026-10-29）：雜訊尺只有 +0.02%，原結論不變，仍擱置。
+- 組合 G（B 過濾＋持有 30 天＋大盤強勢日才買＋2.8 折，2026-10-29）：**沒過關**。整體勝率 52.1%，但前段 38%、2026/6～9 多賺 −1.93%，大多頭撐起來的，不開往後記錄。
 - 詳細數字、規格和做法見 `HANDOFF.md`（新實驗的規格要怎麼寫在 2.1 節）。
 
 ## 回測怎麼算
