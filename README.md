@@ -14,6 +14,7 @@
 - `scripts/fetch_val.py`、`.github/workflows/fetch-val.yml`：實驗用，手動執行（不在每日更新裡）。補抓本益比／淨值比／殖利率（`data/val/`）、融資餘額（`data/margin/`）和產業分類（`data/industry.json`），分批補、中斷可接著補。網頁和排名都沒有用到。`scripts/test_fetch_val.py` 是它的測試。
 - `scripts/backtest_exp2.js`：多組合比較回測（A～F 組），結果存成 `data/backtest-exp2.json`，網頁不讀。`scripts/test_exp2.js` 是它的測試。
 - `scripts/backtest_zhu.js`、`.github/workflows/backtest-zhu.yml`：朱家泓規則（簡化版）回測（手動執行），結果存成 `data/backtest-zhu.json`。`scripts/test_zhu.js` 是它的測試。
+- `scripts/record_obs.js`、`scripts/backtest_v.js`（對應 `test_obs.js`）：觀察組 M（Minervini 簡化版）、V（台股版 VCP）的往後記錄，結果存 `data/forward-obs.json`，每天自動更新，網頁不讀；只是觀察，不是選股建議。
 - `scripts/backtest_lin.js`、`scripts/backtest_zhu_check.js`、`scripts/backtest_g.js`、`scripts/backtest_minervini.js`（各有對應的 `test_*.js`）：林恩如 20 週均線、朱家泓對照組偏差檢查、組合 G、Minervini 趨勢條件的回測，結果存成 `data/backtest-lin.json`、`data/backtest-zhu-check.json`、`data/backtest-g.json`、`data/backtest-minervini.json`，網頁不讀。
 - `scripts/record_exp.js`、`exp.html`：實驗版往後記錄。原版排名但排除營收衰退或法人賣超的股票，每天記前 10 檔到 `data/forward-exp.json`，`exp.html` 和原版並排比較。
 - `scripts/backtest.js`：用網頁同一套篩選規則，逐日回測，結果存成 `data/backtest.json`。

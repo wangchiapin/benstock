@@ -52,6 +52,7 @@
 | `scripts/backtest_zhu_check.js`、`scripts/test_zhu_check.js` | 朱家泓回測的「對照組偏差」檢查（雜訊尺、固定持有 10／20 天）→ `data/backtest-zhu-check.json`；沒有改 `backtest_zhu.js`；測試 24 項 |
 | `scripts/backtest_g.js`、`scripts/test_g.js` | 組合 G（B 過濾＋持有 30 天＋大盤強勢日才買＋2.8 折）回測 → `data/backtest-g.json`。選項 `--hold`、`--fee-discount`、`--noise`、`--until`、`--dump-trades`；測試 61 項 |
 | `scripts/backtest_minervini.js`、`scripts/test_minervini.js` | Minervini 趨勢條件（簡化版，組合 M）回測 → `data/backtest-minervini.json`。選項 `--fee-discount`、`--until`、`--noise N`、`--dump-trades`、`--dump-gate`；測試 69 項 |
+| `scripts/backtest_v.js`、`scripts/record_obs.js`、`scripts/test_obs.js` | V（台股版 VCP）條件函數；觀察組（M、V）往後記錄 → `data/forward-obs.json`，每天由 daily.yml 最後一步執行（失敗不影響其他步驟）；測試 86 項 |
 | `scripts/backtest.js` | 歷史回測 → `data/backtest.json` |
 | `scripts/record.js` | 往後記錄 → `data/forward.json` |
 | `.github/workflows/daily.yml` | 每天自動跑：抓資料 → 記錄 → commit `data` |
@@ -250,6 +251,12 @@
 - 雜訊尺（同樣的日子隨機挑同樣數量的合格股票、同樣出場規則，30 組）：多賺平均 −0.15（−0.54～0.20）、勝率平均 33.7%。所以趨勢選股本身可能有一點作用（固定持有 30 天勝率 47.5%），但是看結果後才看的，不能拿來調成過關
 - 驗證：偷看未來的假訊號勝率 52.9%、多賺 +7.06%（證明檢查有效）；Python 獨立重算 300 筆（趨勢條件、RS、報酬）0 筆不一致；`node scripts/test_minervini.js` 69 項全過（含「砍掉未來資料訊號不變」）
 - 結論：不算候選，不開往後記錄。到目前為止朱家泓、林恩如、C～F、G、M 都沒過關；**不要再繼續加新方法**（試越多組，湊巧好看的機率越高），等 11 月下旬以後往後記錄累積到 30 個交易日再判斷
+
+### 7.8 V（台股版 VCP）與觀察組往後記錄（2026-11-12～13）
+- Ben 貼的 Threads 腳本（J Law／Minervini 的 VCP XS 腳本）近 2 年只觸發 11 次，無法回測。台股版 V＝M 條件＋兩段 20 天收縮（後段幅度 < 前段且 ≤ 12%）＋近 3 天內放量（>50 日均量 ×1.3）突破 20 日高＋B 過濾；近 2 年只有 116 筆（2026/6～9 僅 6 筆），**樣本不足，不能回測判定**。參考（看結果後才看，不當證據）：勝率 42.2%、平均 +3.90%
+- 做法：不再調參數，改成「事先定好規則、往後記錄」的觀察組 M、V（`scripts/record_obs.js`）。每天記錄當日符合的前 10 檔（M 依近 250 日漲幅排序；V 為 M 訊號且符合收縮＋突破＋B 過濾），持有中同一檔不重複記；隔天開盤買、停損 −8%、持有 30 個交易日、2.8 折，對照組＝同日基本門檻股票。歷史需 ≥ 310 天；V 的法人資料不足 15 天則跳過
+- 判定：M 要已結算 ≥ 100 筆、V ≥ 30 筆才判斷，用 M 的過關標準（多賺 ≥ 0.5 等）。**這兩組只是觀察組，不是候選**；從 2026-11-12 起記錄，不補算過去
+- 驗證：結算與回測 `simMin` 逐筆一致（31 筆 0 不一致）；`node scripts/test_obs.js` 86 項全過
 
 ## 8. 待辦與想法
 - 實驗版計畫（Ben 已同意的順序）：① 每天抓存法人和營收（已做）→ ② 回測決定怎麼加（已完成，過關的是「排除營收衰退或法人賣超」）。事先定好的過關標準：前 10 檔持有 20 天，比原版每筆多 0.5 個百分點以上，且前中後三段都較好；也看 2026 年 6～9 月 → ③ 規則定案後，另開 `exp.html` 和 `data/forward-exp.json` 做實驗版往後記錄，原本的 `index.html` 不動
